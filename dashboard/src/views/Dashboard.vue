@@ -63,13 +63,9 @@ export default {
     
     const loadStats = async () => {
       try {
-        const [articlesRes, usersRes] = await Promise.all([
-          api.getArticles(),
-          api.getUsers()
-        ])
-        
-        stats.value.articles = articlesRes.data.length
-        stats.value.users = usersRes.data.length
+        const { data } = await api.getSummary()
+        stats.value.articles = data.articles
+        stats.value.users = data.users
       } catch (error) {
         console.error('Failed to load stats:', error)
       }
@@ -83,24 +79,8 @@ export default {
 </script>
 
 <style scoped>
-.page {
-  padding: 2rem 0;
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1rem;
-}
-
-h1 {
-  margin-bottom: 2rem;
-  color: #2c3e50;
-}
-
 h2 {
   margin: 2rem 0 1rem;
-  color: #2c3e50;
 }
 
 .stats {
@@ -121,7 +101,7 @@ h2 {
 .stat-value {
   font-size: 2.5rem;
   font-weight: bold;
-  color: #667eea;
+  color: #a01838;
   margin-bottom: 0.5rem;
 }
 

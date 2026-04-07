@@ -132,38 +132,10 @@ export default {
 </script>
 
 <style scoped>
-.page {
-  padding: 2rem 0;
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1rem;
-}
-
-h1 {
-  margin-bottom: 2rem;
-  color: #2c3e50;
-}
-
-h2 {
-  margin-bottom: 1.5rem;
-  color: #2c3e50;
-  font-size: 1.25rem;
-}
-
 .profile-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 2rem;
-}
-
-.card {
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .info-row {
@@ -186,65 +158,7 @@ h2 {
   color: #2c3e50;
 }
 
-.form-group {
-  margin-bottom: 1.5rem;
-}
-
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #555;
-  font-weight: 500;
-}
-
-input {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
-  transition: border-color 0.2s;
-}
-
-input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.error {
-  background: #fee;
-  color: #c33;
-  padding: 0.75rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
-}
-
-.success {
-  background: #d4edda;
-  color: #155724;
-  padding: 0.75rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
-}
-
 .btn-primary {
   width: 100%;
-  padding: 0.75rem;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #5568d3;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 </style>

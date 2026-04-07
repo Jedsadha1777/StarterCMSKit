@@ -1,4 +1,5 @@
 import os
+import click
 from datetime import timedelta
 from flask import Flask
 from flask_cors import CORS
@@ -74,6 +75,21 @@ def create_app():
        response.headers['X-Frame-Options'] = 'DENY'
        response.headers['X-XSS-Protection'] = '1; mode=block'
        return response
+
+    @app.cli.command('seed')
+    @click.option('--email', default='admin', help='Admin email')
+    @click.option('--password', default='admin', help='Admin password')
+    def seed(email, password):
+        """Create initial admin user."""
+        from models import Admin
+        if Admin.query.filter_by(email=email).first():
+            click.echo(f'Admin "{email}" already exists, skipping.')
+            return
+        admin = Admin(email=email)
+        admin.set_password(password)
+        db.session.add(admin)
+        db.session.commit()
+        click.echo(f'Admin created — email: {email}')
 
     return app
 

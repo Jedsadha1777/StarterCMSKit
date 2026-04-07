@@ -168,6 +168,10 @@ export default {
     })
   },
 
+  getSummary() {
+    return api.get('/summary')
+  },
+
   getArticles(params = {}) {
     return api.get('/articles', { params })
   },

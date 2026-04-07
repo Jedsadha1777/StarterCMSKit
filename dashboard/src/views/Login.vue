@@ -8,7 +8,7 @@
           <label>Email</label>
           <input 
             v-model="email" 
-            type="email" 
+            type="text" 
             required 
             placeholder="admin@example.com"
           >
@@ -81,7 +81,7 @@ export default {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #FFF;
 }
 
 .login-card {
@@ -95,62 +95,13 @@ export default {
 
 h1 {
   text-align: center;
-  margin-bottom: 2rem;
-  color: #2c3e50;
-}
-
-.form-group {
-  margin-bottom: 1.5rem;
-}
-
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #555;
-  font-weight: 500;
-}
-
-input {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
-  transition: border-color 0.2s;
-}
-
-input:focus {
-  outline: none;
-  border-color: #667eea;
 }
 
 .error {
-  background: #fee;
-  color: #c33;
-  padding: 0.75rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
   text-align: center;
 }
 
 .btn-primary {
   width: 100%;
-  padding: 0.75rem;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #5568d3;
-}
-
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 </style>
