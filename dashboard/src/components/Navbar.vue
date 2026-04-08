@@ -1,89 +1,46 @@
 <template>
-  <nav class="navbar">
-    <div class="container">
-      <router-link to="/" class="logo">Admin Panel</router-link>
-      
-      <div class="nav-links">
-        <router-link to="/">Dashboard</router-link>
-        <router-link to="/articles">Articles</router-link>
-        <router-link to="/users">Users</router-link>
-        <router-link to="/profile">Profile</router-link>
-        <button @click="logout" class="btn-logout">Logout</button>
-      </div>
+  <v-app-bar color="white" elevation="2" density="comfortable">
+    <div class="d-flex align-center ml-4">
+      <img src="@/assets/logo.png" alt="Logo" style="height:28px" class="mr-2" />
+      <span class="text-h6 font-weight-bold text-primary">Service Report Tool Admin</span>
     </div>
-  </nav>
+
+    <v-spacer />
+
+    <span class="text-body-1 font-weight-bold mr-4">
+      Welcome {{ adminEmail }}!
+    </span>
+
+    <v-btn
+      color="primary"
+      variant="flat"
+      rounded="pill"
+      class="mr-4"
+      @click="logout"
+    >
+      Logout
+    </v-btn>
+  </v-app-bar>
 </template>
 
 <script>
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 export default {
   setup() {
     const router = useRouter()
-    
+    const adminEmail = computed(() => {
+      try { return JSON.parse(localStorage.getItem('admin') || '{}').email || 'admin' }
+      catch { return 'admin' }
+    })
+
     const logout = () => {
       localStorage.clear()
       router.push('/login')
     }
-    
-    return { logout }
+
+    return { adminEmail, logout }
   }
 }
 </script>
-
-<style scoped>
-.navbar {
-  background: #2c3e50;
-  color: white;
-  padding: 1rem 0;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.logo {
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: white;
-  text-decoration: none;
-}
-
-.nav-links {
-  display: flex;
-  gap: 1.5rem;
-  align-items: center;
-}
-
-.nav-links a {
-  color: rgba(255,255,255,0.8);
-  text-decoration: none;
-  transition: color 0.2s;
-}
-
-.nav-links a:hover,
-.nav-links a.router-link-active {
-  color: white;
-}
-
-.btn-logout {
-  background: #e74c3c;
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: background 0.2s;
-}
-
-.btn-logout:hover {
-  background: #c0392b;
-}
-</style>

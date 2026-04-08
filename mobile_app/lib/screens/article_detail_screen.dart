@@ -6,7 +6,7 @@ import '../exceptions/api_exceptions.dart';
 import '../providers/auth_provider.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
-  final int articleId;
+  final String articleId;
 
   const ArticleDetailScreen({super.key, required this.articleId});
 
@@ -35,25 +35,25 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         _isLoading = false;
       });
     } on RefreshTokenExpiredException catch (e) {
-      if (mounted) {
-        await context.read<AuthProvider>().logout();
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
+      if (!mounted) return;
+      await context.read<AuthProvider>().logout();
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+        ),
+      );
     } on SessionExpiredException catch (e) {
-      if (mounted) {
-        await context.read<AuthProvider>().logout();
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
-      }
+      if (!mounted) return;
+      await context.read<AuthProvider>().logout();
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);

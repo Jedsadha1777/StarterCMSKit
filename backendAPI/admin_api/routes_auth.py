@@ -1,132 +1,374 @@
-from flask import request, jsonify
+import json
+import queue
+import secrets
+from uuid import uuid4
+from datetime import datetime, timedelta
+from flask import request, jsonify, Response
 from flask_jwt_extended import (
-    create_access_token, create_refresh_token,
-    jwt_required, get_jwt_identity, get_jwt
+    create_access_token, jwt_required, get_jwt_identity, get_jwt,
+    decode_token
 )
 from admin_api import admin_bp
 from extensions import db
-from models import Admin, TokenBlacklist
+from models import Admin, AdminSession
 from decorators import admin_required
-from datetime import datetime, timedelta
-import os
+from session_cache import session_cache
+from sse_manager import sse_manager
+
+GRACE_SECONDS = 30
+REUSE_GRACE_SECONDS = 30
+SSE_TICKET_TTL = 30
+
+
+# In-memory store for SSE one-time tickets
+_sse_tickets = {}
+
+
+def _cleanup_expired_tickets():
+    """Remove expired tickets to prevent memory leak."""
+    now = datetime.utcnow()
+    expired = [k for k, v in _sse_tickets.items() if now > v['expires']]
+    for k in expired:
+        del _sse_tickets[k]
+
+
+def _create_session(admin, raw_refresh, family=None, ip=None, ua=None):
+    session = AdminSession(
+        id=str(uuid4()),
+        admin_id=admin.id,
+        refresh_token_hash=AdminSession.hash_token(raw_refresh),
+        token_family=family or str(uuid4()),
+        status='active',
+        ip_address=ip,
+        user_agent=ua,
+    )
+    db.session.add(session)
+    return session
+
+
+def _make_access_token(admin, session):
+    claims = {
+        'user_type': 'admin',
+        'session_id': session.id,
+    }
+    return create_access_token(identity=admin.public_id, additional_claims=claims)
+
+
+def _decode_admin_jwt(allow_expired=False):
+    """Decode JWT from Authorization header. Optionally allow expired tokens."""
+    auth = request.headers.get('Authorization', '')
+    if not auth.startswith('Bearer '):
+        return None, 'Missing Authorization header'
+    token = auth[7:]
+    try:
+        claims = decode_token(token, allow_expired=allow_expired)
+    except Exception as e:
+        return None, str(e)
+    if claims.get('user_type') != 'admin':
+        return None, 'Wrong user type'
+    return claims, None
+
 
 @admin_bp.route('/login', methods=['POST'])
 def login():
-    """Admin login endpoint"""
+    """Admin login — single session enforcement with grace period."""
     data = request.get_json()
-    
+
     if not data or not data.get('email') or not data.get('password'):
         return jsonify({'message': 'Email and password are required'}), 400
-    
+
     admin = Admin.query.filter_by(email=data['email']).first()
-    
     if not admin or not admin.check_password(data['password']):
         return jsonify({'message': 'Invalid email or password'}), 401
-    
-    # create tokens
-    additional_claims = {'user_type': 'admin'}
-    access_token = create_access_token(identity=str(admin.id), additional_claims=additional_claims)
-    refresh_token = create_refresh_token(identity=str(admin.id), additional_claims=additional_claims)
-    
-    return jsonify({
+
+    ip = request.remote_addr
+    ua = request.headers.get('User-Agent', '')[:255]
+
+    old_sessions = AdminSession.query \
+        .filter_by(admin_id=admin.id, status='active') \
+        .with_for_update() \
+        .all()
+
+    # 1) Mark old sessions → grace_period (release UNIQUE slot)
+    replaced_info = None
+    for old in old_sessions:
+        old.status = 'grace_period'
+        old.grace_until = datetime.utcnow() + timedelta(seconds=GRACE_SECONDS)
+        replaced_info = {
+            'old_session_id': old.id,
+            'ip_address': old.ip_address,
+            'last_active_at': old.last_active_at.isoformat() if old.last_active_at else None,
+        }
+        session_cache.invalidate(old.id)
+
+    db.session.flush()  # flush grace_period → active_admin_id = NULL → UNIQUE slot free
+
+    # 2) Create new session (active) — UNIQUE slot is now free
+    raw_refresh = AdminSession.generate_refresh_token()
+    new_session = _create_session(admin, raw_refresh, ip=ip, ua=ua)
+    db.session.flush()  # flush new session so its id exists for FK reference
+
+    # 3) Update replaced_by_session_id
+    for old in old_sessions:
+        old.replaced_by_session_id = new_session.id
+
+    # Cleanup expired grace sessions (exclude the one just marked)
+    old_ids = [o.id for o in old_sessions]
+    expired = AdminSession.query.filter(
+        AdminSession.admin_id == admin.id,
+        AdminSession.status == 'grace_period',
+        AdminSession.grace_until < datetime.utcnow(),
+        ~AdminSession.id.in_(old_ids) if old_ids else True
+    )
+    expired.update({'status': 'revoked'})
+
+    db.session.commit()
+
+    if replaced_info:
+        sse_manager.send(replaced_info['old_session_id'], 'session_replaced', {
+            'code': 'SESSION_REPLACED',
+            'message': 'Your account has been logged in from another device.',
+            'replaced_by': {
+                'session_id': new_session.id,
+                'ip_address': ip,
+                'at': datetime.utcnow().isoformat(),
+            },
+            'grace_seconds': GRACE_SECONDS,
+        })
+
+    access_token = _make_access_token(admin, new_session)
+
+    response = {
         'access_token': access_token,
-        'refresh_token': refresh_token,
-        'admin': admin.to_dict()
-    }), 200
+        'refresh_token': raw_refresh,
+        'admin': admin.to_dict(),
+        'session': new_session.to_dict(),
+    }
+    if replaced_info:
+        response['replaced_session'] = {
+            'ip_address': replaced_info['ip_address'],
+            'last_active_at': replaced_info['last_active_at'],
+        }
 
-
-@admin_bp.route('/forgot-password', methods=['POST'])
-def forgot_password():
-    """Admin forgot password endpoint"""
-    data = request.get_json()
-    
-    if not data or not data.get('email'):
-        return jsonify({'message': 'Email is required'}), 400
-    
-    admin = Admin.query.filter_by(email=data['email']).first()
-    
-    # TODO: Implement email sending logic here
-    return jsonify({'message': 'If this email exists, a reset link will be sent'}), 200
+    return jsonify(response), 200
 
 
 @admin_bp.route('/refresh', methods=['POST'])
-@jwt_required(refresh=True)
 def refresh():
-    """Refresh access token endpoint - แบบ rotating refresh token"""
-    current_admin_id = get_jwt_identity()
-    claims = get_jwt()
+    """Refresh — accepts expired access token (real credential is opaque refresh token)"""
+    claims, err = _decode_admin_jwt(allow_expired=True)
+    if err:
+        return jsonify({'code': 'INVALID_TOKEN', 'message': err}), 401
 
-    if claims.get('user_type') != 'admin':
-        return jsonify({'message': 'Unauthorized'}), 403
-    
-    admin = Admin.query.get(current_admin_id)
-    
+    admin_public_id = claims['sub']
+    session_id = claims.get('session_id')
+    data = request.get_json() or {}
+    raw_token = data.get('refresh_token', '')
+
+    if not raw_token:
+        return jsonify({'code': 'INVALID_TOKEN', 'message': 'refresh_token is required'}), 400
+
+    admin = Admin.query.filter_by(public_id=admin_public_id).first()
     if not admin:
-        return jsonify({'message': 'Admin not found'}), 404
-    
-    # old refresh token to blacklist
-    old_jti = claims['jti']
-    old_exp = datetime.fromtimestamp(claims['exp'])
-    
-    TokenBlacklist.add_to_blacklist(
-        jti=old_jti,
-        token_type='refresh',
-        user_id=current_admin_id,
-        user_type='admin',
-        expires_at=old_exp
+        return jsonify({'code': 'INVALID_TOKEN', 'message': 'Admin not found'}), 401
+
+    session = AdminSession.query.filter_by(id=session_id).with_for_update().first()
+
+    if not session or session.admin_id != admin.id:
+        return jsonify({'code': 'SESSION_NOT_FOUND', 'message': 'Session not found'}), 401
+
+    if not AdminSession.verify_token(raw_token, session.refresh_token_hash):
+        return jsonify({'code': 'INVALID_TOKEN', 'message': 'Invalid refresh token'}), 401
+
+    if not session.is_valid():
+        return jsonify({'code': 'SESSION_REVOKED', 'message': 'Session has been revoked'}), 401
+
+    # Reuse detection
+    if session.is_used:
+        elapsed = (datetime.utcnow() - session.used_at).total_seconds() if session.used_at else 9999
+
+        if elapsed <= REUSE_GRACE_SECONDS:
+            # Network retry — find latest unused session in this family and generate new refresh token for it
+            latest = AdminSession.query.filter_by(
+                token_family=session.token_family, is_used=False
+            ).order_by(AdminSession.created_at.desc()).first()
+
+            if latest:
+                new_raw = AdminSession.generate_refresh_token()
+                latest.refresh_token_hash = AdminSession.hash_token(new_raw)
+                db.session.commit()
+
+                access_token = _make_access_token(admin, latest)
+                return jsonify({
+                    'access_token': access_token,
+                    'refresh_token': new_raw,
+                    'session': latest.to_dict(),
+                }), 200
+
+        # Theft detected — revoke entire family
+        AdminSession.query.filter_by(token_family=session.token_family).update({'status': 'revoked'})
+        db.session.commit()
+
+        session_cache.invalidate(session.id)
+        sse_manager.send(session.id, 'security_alert', {
+            'code': 'TOKEN_REUSE_DETECTED',
+            'message': 'Token reuse detected. All sessions have been revoked.',
+        })
+
+        return jsonify({
+            'code': 'TOKEN_REUSE_DETECTED',
+            'message': 'Token reuse detected. All sessions have been revoked.'
+        }), 401
+
+    # Normal rotation
+    session.is_used = True
+    session.used_at = datetime.utcnow()
+    session.status = 'revoked'
+    session_cache.invalidate(session.id)
+
+    new_raw_refresh = AdminSession.generate_refresh_token()
+    new_session = _create_session(
+        admin, new_raw_refresh,
+        family=session.token_family,
+        ip=session.ip_address,
+        ua=session.user_agent,
     )
 
-    # Cleanup token (5% chance)
-    import random
-    if random.randint(1, 20) == 1:
-       try:
-           cutoff = datetime.utcnow() - timedelta(days=30)
-           deleted = TokenBlacklist.query.filter(
-               TokenBlacklist.expires_at < cutoff
-           ).delete()
-           db.session.commit()
-       except:
-           db.session.rollback()
-    
-    # create new tokens (rotating refresh token)
-    additional_claims = {'user_type': 'admin'}
-    new_access_token = create_access_token(identity=current_admin_id, additional_claims=additional_claims)
-    new_refresh_token = create_refresh_token(identity=current_admin_id, additional_claims=additional_claims)
-    
+    db.session.commit()
+
+    access_token = _make_access_token(admin, new_session)
+
     return jsonify({
-        'access_token': new_access_token,
-        'refresh_token': new_refresh_token
+        'access_token': access_token,
+        'refresh_token': new_raw_refresh,
+        'session': new_session.to_dict(),
     }), 200
 
 
 @admin_bp.route('/logout', methods=['POST'])
 @jwt_required()
-def logout():
-    """Logout endpoint - revoke ทั้ง access และ refresh tokens"""
+@admin_required
+def logout(admin):
+    """Logout — revoke current session."""
     claims = get_jwt()
-    jti = claims['jti']
-    token_type = claims['type']
-    user_id = get_jwt_identity()
-    user_type = claims.get('user_type', 'admin')
-    exp = datetime.fromtimestamp(claims['exp'])
-    
-    # เพิ่ม token เข้า blacklist
-    TokenBlacklist.add_to_blacklist(
-        jti=jti,
-        token_type=token_type,
-        user_id=user_id,
-        user_type=user_type,
-        expires_at=exp
-    )
-    
+    session_id = claims.get('session_id')
+
+    session = AdminSession.query.get(session_id)
+    if session:
+        session.status = 'revoked'
+        db.session.commit()
+        session_cache.invalidate(session_id)
+
     return jsonify({'message': 'Successfully logged out'}), 200
 
 
-@admin_bp.route('/profile', methods=['GET'])
+@admin_bp.route('/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    if not data or not data.get('email'):
+        return jsonify({'message': 'Email is required'}), 400
+    return jsonify({'message': 'If this email exists, a reset link will be sent'}), 200
+
+
+@admin_bp.route('/session/ticket', methods=['POST'])
 @jwt_required()
-@admin_required 
-def get_profile(admin):
-    """Get admin profile"""    
+@admin_required
+def create_sse_ticket(admin):
+    """Create a short-lived one-time ticket for SSE connection.
+    Prevents JWT leak via URL query param."""
+    _cleanup_expired_tickets()
+
+    claims = get_jwt()
+    session_id = claims.get('session_id')
+
+    ticket = secrets.token_urlsafe(32)
+    _sse_tickets[ticket] = {
+        'session_id': session_id,
+        'admin_id': admin.id,
+        'expires': datetime.utcnow() + timedelta(seconds=SSE_TICKET_TTL),
+    }
+
+    return jsonify({'ticket': ticket}), 200
+
+
+@admin_bp.route('/session/stream', methods=['GET'])
+def session_stream():
+    """SSE endpoint — uses one-time ticket instead of raw JWT."""
+    ticket_id = request.args.get('ticket')
+    if not ticket_id or ticket_id not in _sse_tickets:
+        return jsonify({'code': 'INVALID_TOKEN', 'message': 'Invalid or missing ticket'}), 401
+
+    ticket = _sse_tickets.pop(ticket_id)
+
+    if datetime.utcnow() > ticket['expires']:
+        return jsonify({'code': 'INVALID_TOKEN', 'message': 'Ticket expired'}), 401
+
+    session_id = ticket['session_id']
+
+    def generate():
+        q = sse_manager.connect(session_id)
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=25)
+                    yield f"event: {msg['type']}\ndata: {json.dumps(msg['data'], ensure_ascii=False)}\n\n"
+                except queue.Empty:
+                    yield ": heartbeat\n\n"
+        finally:
+            sse_manager.disconnect(session_id)
+
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+        }
+    )
+
+
+@admin_bp.route('/session/check', methods=['GET'])
+@jwt_required()
+@admin_required
+def check_session(admin):
+    """Lightweight session check — client polls this as SSE fallback."""
+    claims = get_jwt()
+    session_id = claims.get('session_id')
+
+    session = AdminSession.query.get(session_id)
+    if not session or not session.is_valid():
+        replaced_by = None
+        if session and session.replaced_by_session_id:
+            new_ses = AdminSession.query.get(session.replaced_by_session_id)
+            if new_ses:
+                replaced_by = {'ip_address': new_ses.ip_address, 'at': new_ses.created_at.isoformat()}
+
+        return jsonify({
+            'valid': False,
+            'code': 'SESSION_REPLACED',
+            'replaced_by': replaced_by,
+        }), 200
+
+    return jsonify({'valid': True}), 200
+
+
+@admin_bp.route('/profile', methods=['GET', 'PUT'])
+@jwt_required()
+@admin_required
+def profile(admin):
+    if request.method == 'GET':
+        return jsonify(admin.to_dict()), 200
+
+    data = request.get_json()
+    if not data or not data.get('name'):
+        return jsonify({'message': 'Name is required'}), 400
+
+    if Admin.query.filter(Admin.name == data['name'], Admin.id != admin.id).first():
+        return jsonify({'message': 'Name already taken'}), 400
+
+    admin.name = data['name']
+    db.session.commit()
+
     return jsonify(admin.to_dict()), 200
 
 
@@ -134,16 +376,25 @@ def get_profile(admin):
 @jwt_required()
 @admin_required
 def change_password(admin):
-    """Change admin password"""    
     data = request.get_json()
-    
     if not data or not data.get('old_password') or not data.get('new_password'):
         return jsonify({'message': 'Old password and new password are required'}), 400
-    
     if not admin.check_password(data['old_password']):
         return jsonify({'message': 'Invalid old password'}), 401
-    
+
     admin.set_password(data['new_password'])
+
+    all_sessions = AdminSession.query.filter(
+        AdminSession.admin_id == admin.id,
+        AdminSession.status.in_(['active', 'grace_period'])
+    ).all()
+    for s in all_sessions:
+        s.status = 'revoked'
+        session_cache.invalidate(s.id)
+        sse_manager.send(s.id, 'security_alert', {
+            'code': 'PASSWORD_CHANGED',
+            'message': 'Password has been changed. Please login again.',
+        })
+
     db.session.commit()
-    
-    return jsonify({'message': 'Password changed successfully'}), 200
+    return jsonify({'message': 'Password changed successfully. Please login again.'}), 200

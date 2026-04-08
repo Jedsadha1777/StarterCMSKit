@@ -139,7 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ListTile(
                       leading: const Icon(Icons.badge),
                       title: const Text('User ID'),
-                      subtitle: Text(user?.id.toString() ?? 'Loading...'),
+                      subtitle: Text(user?.id ?? 'Loading...'),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ],

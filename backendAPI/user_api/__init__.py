@@ -1,7 +1,7 @@
 from flask import Blueprint
 
-# สร้าง main blueprint สำหรับ user
+# Main blueprint for user
 user_bp = Blueprint('user', __name__, url_prefix='/user-api')
 
 # Import sub-routes
-from user_api import routes_auth, routes_article
+from user_api import routes_auth, routes_article, routes_sync

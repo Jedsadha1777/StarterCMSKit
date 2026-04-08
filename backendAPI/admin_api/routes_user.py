@@ -14,23 +14,18 @@ def get_users(_):
     """Get all users"""
     query = User.query
 
-     # filters
     filters = {
-        'email': {
-            'type': 'fuzzy'
-        },       
-        'created_at': {
-            'type': 'range',
-            'cast': lambda x: datetime.fromisoformat(x)
-        }
+        'name': {'type': 'fuzzy'},
+        'email': {'type': 'fuzzy'},
+        'created_at': {'type': 'range', 'cast': lambda x: datetime.fromisoformat(x)}
     }
 
     query = apply_filters(query, User, filters, search_logic='AND')
 
     query = apply_sorting(
-        query, 
+        query,
         User, 
-        sortable_fields=['email', 'created_at', 'updated_at'],
+        sortable_fields=['name', 'email', 'created_at', 'updated_at'],
         default_sort='-created_at'
     )
 
@@ -53,14 +48,16 @@ def create_user(_):
     """Create new user"""   
     data = request.get_json()
     
-    if not data or not data.get('email') or not data.get('password'):
-        return jsonify({'message': 'Email and password are required'}), 400
-    
-    # ตรวจสอบว่า email ซ้ำใน users 
+    if not data or not data.get('name') or not data.get('email') or not data.get('password'):
+        return jsonify({'message': 'Name, email and password are required'}), 400
+
+    if User.query.filter_by(name=data['name']).first():
+        return jsonify({'message': 'Name already taken'}), 400
+
     if User.query.filter_by(email=data['email']).first():
-        return jsonify({'message': 'Email already exists in users'}), 400
-        
-    new_user = User(email=data['email'])
+        return jsonify({'message': 'Email already exists'}), 400
+
+    new_user = User(name=data['name'], email=data['email'])
     new_user.set_password(data['password'])
     
     db.session.add(new_user)
@@ -69,60 +66,56 @@ def create_user(_):
     return jsonify(new_user.to_dict()), 201
 
 
-@admin_bp.route('/users/<int:user_id>', methods=['GET'])
+@admin_bp.route('/users/<user_id>', methods=['GET'])
 @jwt_required()
 @admin_required
 def get_user(_, user_id):
-    """Get user by ID"""   
-    user = User.query.get(user_id)
-    
+    """Get user by public_id"""
+    user = User.query.filter_by(public_id=user_id).first()
     if not user:
         return jsonify({'message': 'User not found'}), 404
-    
     return jsonify(user.to_dict()), 200
 
 
-@admin_bp.route('/users/<int:user_id>', methods=['PUT'])
+@admin_bp.route('/users/<user_id>', methods=['PUT'])
 @jwt_required()
 @admin_required
 def update_user(_, user_id):
-    """Update user"""   
-    user = User.query.get(user_id)
-    
+    """Update user"""
+    user = User.query.filter_by(public_id=user_id).first()
     if not user:
         return jsonify({'message': 'User not found'}), 404
-    
+
     data = request.get_json()
-    
+
+    if data.get('name'):
+        if User.query.filter(User.name == data['name'], User.id != user.id).first():
+            return jsonify({'message': 'Name already taken'}), 400
+        user.name = data['name']
+
     if data.get('email'):
-        # ตรวจสอบว่า email ซ้ำใน users หรือ admins
-        if User.query.filter(User.email == data['email'], User.id != user_id).first():
+        if User.query.filter(User.email == data['email'], User.id != user.id).first():
             return jsonify({'message': 'Email already exists in users'}), 400
-        
         if Admin.query.filter_by(email=data['email']).first():
             return jsonify({'message': 'Email already exists in admins'}), 400
-        
         user.email = data['email']
-    
+
     if data.get('password'):
         user.set_password(data['password'])
-    
+
     db.session.commit()
-    
     return jsonify(user.to_dict()), 200
 
 
-@admin_bp.route('/users/<int:user_id>', methods=['DELETE'])
+@admin_bp.route('/users/<user_id>', methods=['DELETE'])
 @jwt_required()
 @admin_required
 def delete_user(_, user_id):
-    """Delete user""" 
-    user = User.query.get(user_id)
-    
+    """Delete user"""
+    user = User.query.filter_by(public_id=user_id).first()
     if not user:
         return jsonify({'message': 'User not found'}), 404
-    
+
     db.session.delete(user)
     db.session.commit()
-    
     return jsonify({'message': 'User deleted successfully'}), 200

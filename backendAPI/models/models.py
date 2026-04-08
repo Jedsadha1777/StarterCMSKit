@@ -17,13 +17,13 @@ class TokenBlacklist(db.Model):
     
     @staticmethod
     def is_jti_blacklisted(jti):
-        """ตรวจสอบว่า token ถูก blacklist หรือไม่"""
+        """Check if token is blacklisted"""
         query = TokenBlacklist.query.filter_by(jti=jti).first()
         return query is not None
     
     @staticmethod
     def add_to_blacklist(jti, token_type, user_id, user_type, expires_at):
-        """เพิ่ม token เข้า blacklist"""
+        """Add token to blacklist"""
         blacklist_token = TokenBlacklist(
             jti=jti,
             token_type=token_type,

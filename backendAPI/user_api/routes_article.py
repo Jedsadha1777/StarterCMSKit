@@ -12,7 +12,7 @@ from datetime import datetime
 def get_articles(_):
     """Get all articles"""
 
-    query = Article.query
+    query = Article.query.filter_by(is_deleted=False, status='published')
 
     # filters
     filters = {
@@ -53,13 +53,13 @@ def get_articles(_):
     }), 200
 
 
-@user_bp.route('/articles/<int:article_id>', methods=['GET'])
+@user_bp.route('/articles/<article_id>', methods=['GET'])
 @jwt_required()
 @user_required
 def get_article(_, article_id):
-    """Get article by ID (user must login)"""
-    article = Article.query.get(article_id)
-    
+    """Get article by public_id"""
+    article = Article.query.filter_by(public_id=article_id, is_deleted=False, status='published').first()
+
     if not article:
         return jsonify({'message': 'Article not found'}), 404
     

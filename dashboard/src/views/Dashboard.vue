@@ -1,143 +1,81 @@
 <template>
-  <div class="page">
-    <div class="container">
-      <h1>Dashboard</h1>
-      
-      <div class="stats">
-        <div class="stat-card">
-          <div class="stat-value">{{ stats.articles }}</div>
-          <div class="stat-label">Articles</div>
-        </div>
-        
-        <div class="stat-card">
-          <div class="stat-value">{{ stats.users }}</div>
-          <div class="stat-label">Users</div>
-        </div>
-        
-        <div class="stat-card">
-          <div class="stat-value">{{ adminInfo.email }}</div>
-          <div class="stat-label">Logged in as</div>
-        </div>
-      </div>
-      
-      <div class="quick-actions">
-        <h2>Quick Actions</h2>
-        <div class="actions-grid">
-          <router-link to="/articles/new" class="action-card">
-            <span class="icon">📝</span>
-            <span>Create Article</span>
-          </router-link>
-          
-          <router-link to="/users/new" class="action-card">
-            <span class="icon">👤</span>
-            <span>Create User</span>
-          </router-link>
-          
-          <router-link to="/articles" class="action-card">
-            <span class="icon">📚</span>
-            <span>View Articles</span>
-          </router-link>
-          
-          <router-link to="/users" class="action-card">
-            <span class="icon">👥</span>
-            <span>View Users</span>
-          </router-link>
-        </div>
-      </div>
-    </div>
+  <div>
+    <PageBanner title="Dashboard" />
+
+    <v-container>
+      <v-row class="mb-8">
+        <v-col cols="12" sm="4">
+          <v-card variant="outlined">
+            <v-card-text class="text-center">
+              <div class="text-h3 text-primary font-weight-bold">{{ stats.articles }}</div>
+              <div class="text-overline">Articles</div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+        <v-col cols="12" sm="4">
+          <v-card variant="outlined">
+            <v-card-text class="text-center">
+              <div class="text-h3 text-primary font-weight-bold">{{ stats.users }}</div>
+              <div class="text-overline">Users</div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+        <v-col cols="12" sm="4">
+          <v-card variant="outlined">
+            <v-card-text class="text-center">
+              <div class="text-h5 text-primary font-weight-bold">{{ adminInfo.email }}</div>
+              <div class="text-overline">Logged in as</div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <v-row>
+        <v-col cols="6" sm="3">
+          <v-btn color="primary" variant="flat" block size="large" to="/articles" class="mb-3">
+            <v-icon start>mdi-newspaper</v-icon>Articles
+          </v-btn>
+        </v-col>
+        <v-col cols="6" sm="3">
+          <v-btn color="primary" variant="flat" block size="large" to="/users" class="mb-3">
+            <v-icon start>mdi-account-group</v-icon>Users
+          </v-btn>
+        </v-col>
+        <v-col cols="6" sm="3">
+          <v-btn color="primary" variant="flat" block size="large" to="/articles/new" class="mb-3">
+            <v-icon start>mdi-pencil-plus</v-icon>New Article
+          </v-btn>
+        </v-col>
+        <v-col cols="6" sm="3">
+          <v-btn color="primary" variant="flat" block size="large" to="/users/new" class="mb-3">
+            <v-icon start>mdi-account-plus</v-icon>New User
+          </v-btn>
+        </v-col>
+      </v-row>
+    </v-container>
   </div>
 </template>
 
 <script>
 import { ref, onMounted } from 'vue'
 import api from '../api'
+import PageBanner from '../components/PageBanner.vue'
 
 export default {
+  components: { PageBanner },
   setup() {
-    const stats = ref({
-      articles: 0,
-      users: 0
-    })
-    
+    const stats = ref({ articles: 0, users: 0 })
     const adminInfo = ref(JSON.parse(localStorage.getItem('admin') || '{}'))
-    
-    const loadStats = async () => {
+
+    onMounted(async () => {
       try {
         const { data } = await api.getSummary()
         stats.value.articles = data.articles
         stats.value.users = data.users
-      } catch (error) {
-        console.error('Failed to load stats:', error)
-      }
-    }
-    
-    onMounted(loadStats)
-    
+      } catch {}
+    })
+
     return { stats, adminInfo }
   }
 }
 </script>
-
-<style scoped>
-h2 {
-  margin: 2rem 0 1rem;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-  margin-bottom: 3rem;
-}
-
-.stat-card {
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  text-align: center;
-}
-
-.stat-value {
-  font-size: 2.5rem;
-  font-weight: bold;
-  color: #a01838;
-  margin-bottom: 0.5rem;
-}
-
-.stat-label {
-  color: #666;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.actions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-}
-
-.action-card {
-  background: white;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  text-decoration: none;
-  color: #2c3e50;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.action-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-}
-
-.action-card .icon {
-  font-size: 2rem;
-}
-</style>

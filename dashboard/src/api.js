@@ -3,7 +3,7 @@ import router from './router'
 
 const API_BASE_URL = 'http://127.0.0.1:5000/admin-api'
 
-// Global lock สำหรับ refresh token
+// Global lock for refresh token
 let isRefreshing = false
 let failedQueue = []
 
@@ -44,28 +44,44 @@ api.interceptors.response.use(
   async error => {
     const originalRequest = error.config
 
-    // จัดการ network errors
+    // Handle network errors
     if (!error.response) {
       console.error('Network error:', error.message)
       return Promise.reject({
-        message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาตรวจสอบอินเทอร์เน็ต',
+        message: 'Connection error. Please check your internet.',
         type: 'NETWORK_ERROR'
       })
     }
 
-    // จัดการ 5xx errors
+    // Handle 5xx errors
     if (error.response.status >= 500) {
       console.error('Server error:', error.response.status)
       return Promise.reject({
-        message: 'เซิร์ฟเวอร์ขัดข้อง กรุณาลองใหม่อีกครั้ง',
+        message: 'Server error. Please try again.',
         type: 'SERVER_ERROR',
         status: error.response.status
       })
     }
 
-    // จัดการ 401 Unauthorized
+    // Handle 401 Unauthorized
     if (error.response.status === 401 && !originalRequest._retry) {
-      // ป้องกันการ refresh loop
+      const code = error.response.data?.code
+
+      // SESSION_REPLACED / TOKEN_REUSE_DETECTED → SSE modal handles notification
+      // fallback: if SSE disconnected, redirect after 2 seconds
+      if (code === 'SESSION_REPLACED' || code === 'SESSION_REVOKED' || code === 'TOKEN_REUSE_DETECTED') {
+        isRefreshing = false
+        processQueue(error, null)
+        setTimeout(() => {
+          if (localStorage.getItem('access_token')) {
+            localStorage.clear()
+            router.push('/login')
+          }
+        }, 2000)
+        return Promise.reject(error)
+      }
+
+      // Prevent refresh loop
       if (originalRequest.url.includes('/refresh')) {
         isRefreshing = false
         localStorage.clear()
@@ -73,7 +89,7 @@ api.interceptors.response.use(
         return Promise.reject(error)
       }
 
-      // ถ้ากำลัง refresh อยู่ ให้เข้าคิว
+      // If already refreshing, queue the request
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -100,31 +116,34 @@ api.interceptors.response.use(
       }
 
       try {
-        // สร้าง axios instance แยกสำหรับ refresh (ไม่ผ่าน interceptor)
+        // Separate axios instance for refresh (bypass interceptor)
         const refreshApi = axios.create({
           baseURL: API_BASE_URL,
           timeout: 10000,
           withCredentials: true
         })
 
-        const { data } = await refreshApi.post('/refresh', {}, {
-          headers: { Authorization: `Bearer ${refreshToken}` }
+        // Send expired access token as Bearer (server decodes with allow_expired=True)
+        // + opaque refresh token in body
+        const expiredAccessToken = localStorage.getItem('access_token')
+        const { data } = await refreshApi.post('/refresh', { refresh_token: refreshToken }, {
+          headers: { Authorization: `Bearer ${expiredAccessToken}` }
         })
 
         const newAccessToken = data.access_token
         
-        // อัปเดต access token
+        // Update access token
         localStorage.setItem('access_token', newAccessToken)
         
-        // อัปเดต refresh token ถ้ามี (rotating refresh tokens)
+        // Update refresh token if present (rotating refresh tokens)
         if (data.refresh_token) {
           localStorage.setItem('refresh_token', data.refresh_token)
         }
 
-        // อัปเดต header ของ request เดิม
+        // Update header of original request
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
         
-        // ประมวลผล queued requests
+        // Process queued requests
         processQueue(null, newAccessToken)
         isRefreshing = false
 
@@ -133,7 +152,7 @@ api.interceptors.response.use(
         processQueue(refreshError, null)
         isRefreshing = false
         
-        // ล้างข้อมูลและ redirect
+        // Clear data and redirect
         localStorage.clear()
         router.push('/login')
         
@@ -161,11 +180,19 @@ export default {
     return api.get('/profile')
   },
 
+  updateProfile(data) {
+    return api.put('/profile', data)
+  },
+
   changePassword(oldPassword, newPassword) {
     return api.put('/profile/change-password', {
       old_password: oldPassword,
       new_password: newPassword
     })
+  },
+
+  deleteAccount(password) {
+    return api.post('/profile/delete-account', { password })
   },
 
   getSummary() {
@@ -210,5 +237,25 @@ export default {
 
   deleteUser(id) {
     return api.delete(`/users/${id}`)
+  },
+
+  getAdmins(params = {}) {
+    return api.get('/admins', { params })
+  },
+
+  getAdmin(id) {
+    return api.get(`/admins/${id}`)
+  },
+
+  createAdmin(data) {
+    return api.post('/admins', data)
+  },
+
+  updateAdmin(id, data) {
+    return api.put(`/admins/${id}`, data)
+  },
+
+  deleteAdmin(id) {
+    return api.delete(`/admins/${id}`)
   }
 }

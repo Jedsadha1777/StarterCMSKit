@@ -1,9 +1,15 @@
 import '../../models/article.dart';
-import 'api_client.dart';
 import '../../exceptions/api_exceptions.dart';
+import '../local_db.dart';
+import '../sync_service.dart';
+import '../connectivity_service.dart';
+import 'api_client.dart';
 
 class ArticlesApi {
   final ApiClient _client = ApiClient();
+  final LocalDb _localDb = LocalDb();
+  final SyncService _syncService = SyncService();
+  final ConnectivityService _connectivity = ConnectivityService();
 
   Future<Map<String, dynamic>> getArticles({
     int page = 1,
@@ -11,76 +17,62 @@ class ArticlesApi {
     String? title,
     String? content,
   }) async {
-    final queryParams = {
-      'page': page.toString(),
-      'per_page': perPage.toString(),
-      if (title != null && title.isNotEmpty) 'title': title,
-      if (content != null && content.isNotEmpty) 'content': content,
+    // Online → sync แล้วอ่านจาก local DB
+    if (_connectivity.isOnline) {
+      await _syncService.syncFromServer();
+    }
+
+    final search = title ?? content;
+    final articles = await _localDb.getArticles(
+      search: search,
+      page: page,
+      perPage: perPage,
+    );
+    final total = await _localDb.getArticleCount(search: search);
+    final pages = (total / perPage).ceil().clamp(1, double.infinity).toInt();
+
+    return {
+      'articles': articles,
+      'total': total,
+      'page': page,
+      'pages': pages,
+      'per_page': perPage,
     };
-
-    return await _client.get(
-      '/articles',
-      (data) {
-        if (data['articles'] == null) {
-          throw ApiException('Invalid response: missing articles');
-        }
-        
-        return {
-          'articles': (data['articles'] as List)
-              .map((json) => Article.fromJson(json))
-              .toList(),
-          'total': _client.safeParseInt(data['total']),
-          'page': _client.safeParseInt(data['page'], defaultValue: 1),
-          'pages': _client.safeParseInt(data['pages'], defaultValue: 1),
-          'per_page': _client.safeParseInt(data['per_page'], defaultValue: 10),
-        };
-      },
-      queryParams: queryParams,
-      errorMessage: 'Failed to load articles',
-      timeout: const Duration(seconds: 15),
-    );
   }
 
-  Future<Article> getArticle(int id) async {
-    return await _client.get(
-      '/articles/$id',
-      (data) => Article.fromJson(data),
-      errorMessage: 'Failed to load article',
-      statusMessages: {
-        404: 'Article not found',
-      },
-    );
+  Future<Article> getArticle(String id) async {
+    // Try local first
+    final local = await _localDb.getArticle(id);
+
+    if (_connectivity.isOnline) {
+      try {
+        final remote = await _client.get(
+          '/articles/$id',
+          (data) => Article.fromJson(data),
+          errorMessage: 'Failed to load article',
+          statusMessages: {404: 'Article not found'},
+        );
+        // Update local cache
+        await _localDb.upsertArticles([{
+          'id': remote.id,
+          'title': remote.title,
+          'content': remote.content,
+          'author_id': remote.authorId,
+          'author_email': remote.authorEmail,
+          'status': remote.status,
+          'publish_date': remote.publishDate,
+          'version': remote.version,
+          'created_at': remote.createdAt,
+          'updated_at': remote.updatedAt,
+        }]);
+        return remote;
+      } catch (_) {
+        if (local != null) return local;
+        rethrow;
+      }
+    }
+
+    if (local != null) return local;
+    throw ApiException('Article not found (offline)');
   }
-
-  // Future<Article> createArticle(String title, String content) async {
-  //   return await _client.post(
-  //     '/articles',
-  //     (data) => Article.fromJson(data),
-  //     body: {'title': title, 'content': content},
-  //     errorMessage: 'Failed to create article',
-  //   );
-  // }
-
-  // Future<Article> updateArticle(int id, String title, String content) async {
-  //   return await _client.put(
-  //     '/articles/$id',
-  //     (data) => Article.fromJson(data),
-  //     body: {'title': title, 'content': content},
-  //     errorMessage: 'Failed to update article',
-  //     statusMessages: {
-  //       404: 'Article not found',
-  //     },
-  //   );
-  // }
-
-  // Future<void> deleteArticle(int id) async {
-  //   await _client.requestVoid(
-  //     '/articles/$id',
-  //     'DELETE',
-  //     errorMessage: 'Failed to delete article',
-  //     statusMessages: {
-  //       404: 'Article not found',
-  //     },
-  //   );
-  // }
 }

@@ -13,38 +13,24 @@ from datetime import datetime
 def get_articles(_):
     """Get all articles"""
 
-    query = Article.query
+    query = Article.query.filter_by(is_deleted=False)
 
     # filters
     filters = {
-        'title': {
-            'type': 'fuzzy'
-        },
-        'content': {
-            'type': 'fuzzy'
-        },
-        'admin_id': {
-            'type': 'range',
-            'cast': int
-        },
-        'created_at': {
-            'type': 'range',
-            'cast': lambda x: datetime.fromisoformat(x)
-        },
-        'author_email': {
-            'type': 'relation',
-            'model': Admin,
-            'field': 'email'
-        }
+        'title': {'type': 'fuzzy'},
+        'content': {'type': 'fuzzy'},
+        'status': {'type': 'exact'},
+        'created_at': {'type': 'range', 'cast': lambda x: datetime.fromisoformat(x)},
+        'publish_date': {'type': 'range', 'cast': lambda x: datetime.fromisoformat(x)},
+        'author_email': {'type': 'relation', 'model': Admin, 'field': 'email'}
     }
 
     query = apply_filters(query, Article, filters, search_logic='AND')
 
-    #  sorting
     query = apply_sorting(
-        query, 
-        Article, 
-        sortable_fields=['title', 'created_at', 'updated_at'],
+        query,
+        Article,
+        sortable_fields=['title', 'status', 'publish_date', 'created_at', 'updated_at'],
         default_sort='-created_at'
     )
 
@@ -69,10 +55,19 @@ def create_article(admin):
     if not data or not data.get('title') or not data.get('content'):
         return jsonify({'message': 'Title and content are required'}), 400
     
+    publish_date = None
+    if data.get('publish_date'):
+        try:
+            publish_date = datetime.fromisoformat(data['publish_date'])
+        except ValueError:
+            return jsonify({'message': 'Invalid publish_date format'}), 400
+
     article = Article(
         title=data['title'],
         content=data['content'],
-        admin_id=admin.id  
+        admin_id=admin.id,
+        status=data.get('status', 'draft'),
+        publish_date=publish_date,
     )
     
     db.session.add(article)
@@ -81,26 +76,26 @@ def create_article(admin):
     return jsonify(article.to_dict()), 201
 
 
-@admin_bp.route('/articles/<int:article_id>', methods=['GET'])
+@admin_bp.route('/articles/<article_id>', methods=['GET'])
 @jwt_required()
 @admin_required
-def get_article(admin, article_id):  
-    """Get article by ID"""
-    article = Article.query.get(article_id)
-    
+def get_article(admin, article_id):
+    """Get article by public_id"""
+    article = Article.query.filter_by(public_id=article_id, is_deleted=False).first()
+
     if not article:
         return jsonify({'message': 'Article not found'}), 404
-    
+
     return jsonify(article.to_dict()), 200
 
 
-@admin_bp.route('/articles/<int:article_id>', methods=['PUT'])
+@admin_bp.route('/articles/<article_id>', methods=['PUT'])
 @jwt_required()
 @admin_required
-def update_article(admin, article_id):  
+def update_article(admin, article_id):
     """Update article"""
-    article = Article.query.get(article_id)
-    
+    article = Article.query.filter_by(public_id=article_id, is_deleted=False).first()
+
     if not article:
         return jsonify({'message': 'Article not found'}), 404
     
@@ -110,23 +105,35 @@ def update_article(admin, article_id):
         article.title = data['title']
     if data.get('content'):
         article.content = data['content']
-    
+    if 'status' in data:
+        article.status = data['status']
+    if 'publish_date' in data:
+        if data['publish_date']:
+            try:
+                article.publish_date = datetime.fromisoformat(data['publish_date'])
+            except ValueError:
+                return jsonify({'message': 'Invalid publish_date format'}), 400
+        else:
+            article.publish_date = None
+    article.version += 1
+
     db.session.commit()
     
     return jsonify(article.to_dict()), 200
 
 
-@admin_bp.route('/articles/<int:article_id>', methods=['DELETE'])
+@admin_bp.route('/articles/<article_id>', methods=['DELETE'])
 @jwt_required()
 @admin_required
-def delete_article(_, article_id): 
-    """Delete article"""
-    article = Article.query.get(article_id)
-    
+def delete_article(_, article_id):
+    """Soft-delete article"""
+    article = Article.query.filter_by(public_id=article_id, is_deleted=False).first()
+
     if not article:
         return jsonify({'message': 'Article not found'}), 404
     
-    db.session.delete(article)
+    article.is_deleted = True
+    article.version += 1
     db.session.commit()
-    
+
     return jsonify({'message': 'Article deleted successfully'}), 200

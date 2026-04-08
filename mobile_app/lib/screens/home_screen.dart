@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/api/articles_api.dart';
+import '../services/sync_service.dart';
+import '../services/connectivity_service.dart';
 import '../models/article.dart';
 import '../exceptions/api_exceptions.dart';
 import 'article_detail_screen.dart';
@@ -15,9 +17,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ArticlesApi _articlesApi = ArticlesApi();
+  final SyncService _syncService = SyncService();
   final TextEditingController _searchController = TextEditingController();
   List<Article> _articles = [];
   bool _isLoading = false;
+  bool _isSyncing = false;
   int _currentPage = 1;
   int _totalPages = 1;
   int _total = 0;
@@ -27,12 +31,33 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadArticles();
+
+    ConnectivityService().addListener(_onConnectivityChanged);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    ConnectivityService().removeListener(_onConnectivityChanged);
     super.dispose();
+  }
+
+  void _onConnectivityChanged() {
+    if (ConnectivityService().isOnline) {
+      _syncAndReload();
+    }
+  }
+
+  Future<void> _syncAndReload() async {
+    if (_isSyncing) return;
+    setState(() => _isSyncing = true);
+
+    await _syncService.syncFromServer();
+    await _loadArticles();
+
+    if (mounted) {
+      setState(() => _isSyncing = false);
+    }
   }
 
   Future<void> _loadArticles() async {
@@ -54,38 +79,32 @@ class _HomeScreenState extends State<HomeScreen> {
         _totalPages = result['pages'] as int;
       });
     } on RefreshTokenExpiredException catch (e) {
-      if (mounted) {
-        await context.read<AuthProvider>().logout();
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
+      if (!mounted) return;
+      await context.read<AuthProvider>().logout();
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 5),
+        ),
+      );
     } on SessionExpiredException catch (e) {
-      if (mounted) {
-        await context.read<AuthProvider>().logout();
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
-      }
+      if (!mounted) return;
+      await context.read<AuthProvider>().logout();
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message)),
+      );
     } on ApiException catch (e) {
       if (mounted) {
         setState(() => _errorMessage = e.message);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
       }
     } catch (e) {
       if (mounted) {
         setState(() => _errorMessage = 'An unexpected error occurred');
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('An unexpected error occurred')),
-        );
       }
     } finally {
       if (mounted) {
@@ -121,6 +140,15 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Articles'),
         actions: [
+          if (_isSyncing)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.person),
             onPressed: () => Navigator.pushNamed(context, '/profile'),
@@ -183,7 +211,7 @@ class _HomeScreenState extends State<HomeScreen> {
           else
             Expanded(
               child: RefreshIndicator(
-                onRefresh: _loadArticles,
+                onRefresh: _syncAndReload,
                 child: ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: _articles.length,

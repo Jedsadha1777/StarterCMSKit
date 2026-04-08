@@ -1,6 +1,7 @@
 import os
 import click
-from datetime import timedelta
+from uuid import uuid4
+from datetime import datetime, timedelta
 from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -39,10 +40,18 @@ def create_app():
     # Configuration
     app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:root@localhost:8889/cms')
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key')
-    
+    secret_key = os.getenv('SECRET_KEY')
+    jwt_secret = os.getenv('JWT_SECRET_KEY')
+    if not secret_key or not jwt_secret:
+        if not app.debug:
+            raise RuntimeError('SECRET_KEY and JWT_SECRET_KEY must be set in environment variables')
+        secret_key = secret_key or 'dev-secret-key-UNSAFE'
+        jwt_secret = jwt_secret or 'jwt-secret-key-UNSAFE'
+
+    app.config['SECRET_KEY'] = secret_key
+
     # JWT Configuration
-    app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'jwt-secret-key')
+    app.config['JWT_SECRET_KEY'] = jwt_secret
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(seconds=int(os.getenv('JWT_ACCESS_TOKEN_EXPIRES', 900)))
     app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(seconds=int(os.getenv('JWT_REFRESH_TOKEN_EXPIRES', 604800)))
     
@@ -56,7 +65,7 @@ def create_app():
     app.register_blueprint(user_bp)
     
     # Import models to ensure they are registered with SQLAlchemy
-    from models import Admin, User, Article, TokenBlacklist
+    from models import Admin, User, Article, TokenBlacklist, Summary, AdminSession
     
     @app.route('/')
     def index():
@@ -77,22 +86,67 @@ def create_app():
        return response
 
     @app.cli.command('seed')
-    @click.option('--email', default='admin', help='Admin email')
+    @click.option('--name', default='Admin', help='Admin name')
+    @click.option('--email', default='admin@admin.com', help='Admin email')
     @click.option('--password', default='admin', help='Admin password')
-    def seed(email, password):
+    def seed(name, email, password):
         """Create initial admin user."""
         from models import Admin
         if Admin.query.filter_by(email=email).first():
             click.echo(f'Admin "{email}" already exists, skipping.')
             return
-        admin = Admin(email=email)
+        admin = Admin(name=name, email=email)
         admin.set_password(password)
         db.session.add(admin)
         db.session.commit()
-        click.echo(f'Admin created — email: {email}')
+        click.echo(f'Admin created — name: {name}, email: {email}')
+
+    @app.cli.command('backfill')
+    def backfill():
+        """Backfill public_id (UUID v4) for existing rows that have NULL."""
+        from models import Admin, User, Article
+        count = 0
+        for model in [Admin, User, Article]:
+            rows = model.query.filter(
+                (model.public_id == None) | (model.public_id == '')
+            ).all()
+            for row in rows:
+                row.public_id = str(uuid4())
+                count += 1
+            click.echo(f'{model.__tablename__}: {len(rows)} rows backfilled')
+        db.session.commit()
+        click.echo(f'Done — {count} total rows updated')
+
+    @app.cli.command('cleanup')
+    def cleanup():
+        """Clean up expired sessions and blacklist entries."""
+        cutoff = datetime.utcnow() - timedelta(days=7)
+
+        # Revoked admin sessions > 7 days
+        count = AdminSession.query.filter(
+            AdminSession.status == 'revoked',
+            AdminSession.created_at < cutoff
+        ).delete()
+        click.echo(f'Deleted {count} revoked admin sessions')
+
+        # Expired grace period → revoke
+        updated = AdminSession.query.filter(
+            AdminSession.status == 'grace_period',
+            AdminSession.grace_until < datetime.utcnow()
+        ).update({'status': 'revoked'})
+        click.echo(f'Revoked {updated} expired grace sessions')
+
+        # Expired blacklist entries > 7 days
+        bl_count = TokenBlacklist.query.filter(
+            TokenBlacklist.expires_at < cutoff
+        ).delete()
+        click.echo(f'Deleted {bl_count} expired blacklist entries')
+
+        db.session.commit()
+        click.echo('Cleanup complete')
 
     return app
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True)
+    app.run(debug=True, threaded=True)

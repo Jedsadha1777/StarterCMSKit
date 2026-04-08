@@ -1,6 +1,6 @@
 <template>
   <div>
-    <PageBanner :title="isEdit ? 'Edit User' : 'Register User'" />
+    <PageBanner :title="isEdit ? 'Edit Admin' : 'Register Admin'" />
 
     <v-container style="max-width: 800px">
       <v-card variant="outlined">
@@ -26,7 +26,7 @@
       </v-card>
 
       <div class="d-flex justify-space-between mt-6">
-        <v-btn color="primary" variant="flat" rounded="pill" to="/users">
+        <v-btn color="primary" variant="flat" rounded="pill" to="/admins">
           <v-icon start>mdi-arrow-left</v-icon>Back
         </v-btn>
         <v-btn color="success" variant="flat" rounded="pill" :loading="loading" @click="handleSubmit">
@@ -52,8 +52,8 @@ export default {
 
     onMounted(async () => {
       if (!isEdit.value) return
-      try { const { data } = await api.getUser(route.params.id); form.value.name = data.name; form.value.email = data.email }
-      catch { error.value = 'Failed to load user' }
+      try { const { data } = await api.getAdmin(route.params.id); form.value.name = data.name; form.value.email = data.email }
+      catch { error.value = 'Failed to load admin' }
     })
 
     const handleSubmit = async () => {
@@ -61,9 +61,17 @@ export default {
       try {
         const payload = { name: form.value.name, email: form.value.email }
         if (form.value.password) payload.password = form.value.password
-        if (isEdit.value) await api.updateUser(route.params.id, payload)
-        else await api.createUser(payload)
-        router.push('/users')
+        if (isEdit.value) {
+          const { data } = await api.updateAdmin(route.params.id, payload)
+          const current = JSON.parse(localStorage.getItem('admin') || '{}')
+          if (current.id === route.params.id) {
+            localStorage.setItem('admin', JSON.stringify(data))
+            window.dispatchEvent(new Event('storage-updated'))
+          }
+        } else {
+          await api.createAdmin(payload)
+        }
+        router.push('/admins')
       } catch (err) { error.value = err.response?.data?.message || 'Failed to save' }
       finally { loading.value = false }
     }

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
+import 'services/connectivity_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/profile_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  ConnectivityService().init();
   runApp(const MyApp());
 }
 
@@ -14,8 +17,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => AuthProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider.value(value: ConnectivityService()),
+      ],
       child: MaterialApp(
         title: 'User App',
         theme: ThemeData(
@@ -24,6 +30,33 @@ class MyApp extends StatelessWidget {
         ),
         debugShowCheckedModeBanner: false,
         initialRoute: '/',
+        builder: (context, child) {
+          return Column(
+            children: [
+              Consumer<ConnectivityService>(
+                builder: (context, connectivity, _) {
+                  if (connectivity.isOnline) return const SizedBox.shrink();
+                  return Material(
+                    child: Container(
+                      width: double.infinity,
+                      color: Colors.orange.shade800,
+                      padding: EdgeInsets.only(
+                        top: MediaQuery.of(context).padding.top + 4,
+                        bottom: 4,
+                      ),
+                      child: const Text(
+                        'Offline — กำลังใช้ข้อมูลที่บันทึกไว้',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                      ),
+                    ),
+                  );
+                },
+              ),
+              Expanded(child: child!),
+            ],
+          );
+        },
         routes: {
           '/': (context) => const SplashScreen(),
           '/login': (context) => const LoginScreen(),
@@ -50,14 +83,13 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkAuth() async {
-    // รอให้ Provider พร้อม
     await Future.delayed(const Duration(milliseconds: 100));
-    
+
     if (!mounted) return;
-    
+
     try {
       await context.read<AuthProvider>().checkAuth();
-      
+
       if (mounted) {
         final isAuth = context.read<AuthProvider>().isAuthenticated;
         Navigator.pushReplacementNamed(
@@ -66,7 +98,6 @@ class _SplashScreenState extends State<SplashScreen> {
         );
       }
     } catch (e) {
-      // ถ้า error ให้ไปหน้า login
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/login');
       }
@@ -80,7 +111,6 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // อาจใส่ logo ของ app
             Icon(
               Icons.article,
               size: 80,

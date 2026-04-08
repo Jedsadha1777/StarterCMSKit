@@ -35,17 +35,18 @@ class AuthApi {
 
   Future<void> logout() async {
     try {
-      //  backend logout endpoint ก่อน (revoke token)
+      final refreshToken = await _tokenManager.getRefreshToken();
       await _client.requestVoid(
         '/logout',
         'POST',
+        body: {
+          if (refreshToken != null) 'refresh_token': refreshToken,
+        },
         errorMessage: 'Logout failed',
       );
     } catch (e) {
-      // ถ้า logout ล้มเหลว ก็ยังลบ local tokens
       print('Logout error: $e');
     } finally {
-      // ลบ tokens ใน device
       await _tokenManager.clearTokens();
       _client.clearState();
     }
@@ -60,17 +61,21 @@ class AuthApi {
   }
 
   Future<void> changePassword(String oldPassword, String newPassword) async {
+    final refreshToken = await _tokenManager.getRefreshToken();
     await _client.requestVoid(
       '/profile/change-password',
       'PUT',
       body: {
         'old_password': oldPassword,
         'new_password': newPassword,
+        if (refreshToken != null) 'refresh_token': refreshToken,
       },
       errorMessage: 'Failed to change password',
       statusMessages: {
         401: 'Current password is incorrect',
       },
     );
+    await _tokenManager.clearTokens();
+    _client.clearState();
   }
 }
