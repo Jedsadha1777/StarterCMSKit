@@ -10,13 +10,14 @@
         </v-btn>
       </div>
 
-      <!-- Filter bar -->
-      <v-card variant="outlined" class="mb-4 pa-3">
-        <slot name="filters" />
+      <!-- Filter + Table -->
+      <v-card variant="outlined" style="border-width: thin; border-color: rgba(0,0,0,0.2);">
+        <div style="padding: 16px;">
+          <slot name="filters" />
+        </div>
+        <v-divider style="border-color: rgba(0,0,0,0.08);" />
+        <slot name="table" />
       </v-card>
-
-      <!-- Table -->
-      <slot name="table" />
 
       <!-- Back -->
       <div class="mt-4">

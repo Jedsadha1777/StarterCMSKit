@@ -33,10 +33,10 @@ app.use(router)
 app.use(vuetify)
 app.mount('#app')
 
-// Striped table rows
+// Table styles
 const style = document.createElement('style')
 style.textContent = `
-  .v-table tbody tr:nth-child(even) { background: #f5f5f5; }
   .v-table tbody tr:hover { background: #e8e8e8 !important; }
+  .v-table tbody td { padding-top: 12px !important; padding-bottom: 12px !important; }
 `
 document.head.appendChild(style)

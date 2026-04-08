@@ -3,7 +3,7 @@
     <PageBanner :title="title" />
 
     <v-container style="max-width: 800px">
-      <v-card variant="outlined">
+      <v-card variant="outlined" style="border-color: rgba(0,0,0,0.12);">
         <v-card-text class="pa-6">
           <v-form @submit.prevent="$emit('submit')">
             <slot />

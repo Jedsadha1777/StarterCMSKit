@@ -35,7 +35,7 @@ CREATE TABLE `admins` (
   `updated_at` datetime DEFAULT NULL,
   `public_id` varchar(36) NOT NULL,
   `name` varchar(100) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
 
 --
 -- Dumping data for table `admins`
@@ -80,7 +80,7 @@ CREATE TABLE `admin_sessions` (
   `created_at` datetime DEFAULT current_timestamp(),
   `last_active_at` datetime DEFAULT current_timestamp(),
   `active_admin_id` int(11) GENERATED ALWAYS AS (case when `status` = 'active' then `admin_id` else NULL end) STORED
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
 
 --
 -- Dumping data for table `admin_sessions`
@@ -123,7 +123,7 @@ INSERT INTO `admin_sessions` (`id`, `admin_id`, `refresh_token_hash`, `token_fam
 
 CREATE TABLE `alembic_version` (
   `version_num` varchar(32) NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
 
 --
 -- Dumping data for table `alembic_version`
@@ -150,7 +150,7 @@ CREATE TABLE `articles` (
   `public_id` varchar(36) NOT NULL,
   `status` varchar(20) NOT NULL DEFAULT 'draft',
   `publish_date` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
 
 --
 -- Dumping data for table `articles`
@@ -194,7 +194,7 @@ CREATE TABLE `summary` (
   `table_name` varchar(64) NOT NULL,
   `row_count` int(11) NOT NULL DEFAULT 0,
   `updated_at` datetime DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
 
 --
 -- Dumping data for table `summary`
@@ -219,7 +219,7 @@ CREATE TABLE `token_blacklist` (
   `user_type` varchar(10) NOT NULL,
   `revoked_at` datetime NOT NULL,
   `expires_at` datetime NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
 
 -- --------------------------------------------------------
 
@@ -235,7 +235,7 @@ CREATE TABLE `users` (
   `updated_at` datetime DEFAULT NULL,
   `public_id` varchar(36) NOT NULL,
   `name` varchar(100) NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_uca1400_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
 
 --
 -- Dumping data for table `users`

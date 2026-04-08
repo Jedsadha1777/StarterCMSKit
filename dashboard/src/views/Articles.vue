@@ -1,17 +1,17 @@
 <template>
   <ListPage title="Articles" createTo="/articles/new">
     <template #filters>
-      <div class="d-flex align-center ga-3 mb-3">
+      <div class="d-flex align-center ga-3 flex-wrap">
         <span class="text-body-2 font-weight-medium text-no-wrap">Search:</span>
-        <v-text-field v-model="search" placeholder="Search by title or content..." prepend-inner-icon="mdi-magnify" variant="outlined" density="compact" hide-details clearable style="flex:1" @update:model-value="handleSearch" />
+        <v-text-field v-model="search" placeholder="Search by title or content..." prepend-inner-icon="mdi-magnify" variant="outlined" density="compact" hide-details clearable style="flex:1; min-width:200px; max-width:400px" @update:model-value="handleSearch" />
         <span class="text-body-2 font-weight-medium text-no-wrap">Status:</span>
         <v-select v-model="filterStatus" :items="statusOptions" variant="outlined" density="compact" hide-details clearable style="max-width:150px" @update:model-value="handleSearch" />
-      </div>
-      <div class="d-flex align-center ga-3">
-        <span class="text-body-2 font-weight-medium text-no-wrap">From:</span>
-        <v-text-field v-model="dateFrom" type="date" variant="outlined" density="compact" hide-details clearable style="max-width:200px" @update:model-value="handleSearch" />
-        <span class="text-body-2 font-weight-medium text-no-wrap">To:</span>
-        <v-text-field v-model="dateTo" type="date" variant="outlined" density="compact" hide-details clearable style="max-width:200px" @update:model-value="handleSearch" />
+        <div class="d-flex align-center ga-3" style="flex-shrink: 0;">
+          <span class="text-body-2 font-weight-medium text-no-wrap">From:</span>
+          <v-text-field v-model="dateFrom" type="date" variant="outlined" density="compact" hide-details clearable style="max-width:180px" @update:model-value="handleSearch" />
+          <span class="text-body-2 font-weight-medium text-no-wrap">To:</span>
+          <v-text-field v-model="dateTo" type="date" variant="outlined" density="compact" hide-details clearable style="max-width:180px" @update:model-value="handleSearch" />
+        </div>
         <v-btn color="primary" variant="flat" @click="load"><v-icon start>mdi-magnify</v-icon>Search</v-btn>
       </div>
     </template>
@@ -22,6 +22,7 @@
         :total="total" :page="page" :totalPages="totalPages" :visiblePages="visiblePages"
         :sortBy="sortBy" :sortDir="sortDir"
         @sort="toggleSort" @page="goToPage"
+        editBasePath="/articles"
         emptyText="No articles found"
       >
         <template #cell-status="{ item }">
@@ -30,8 +31,8 @@
         <template #cell-publish_date="{ item }">{{ item.publish_date ? formatDate(item.publish_date) : '-' }}</template>
         <template #cell-created_at="{ item }">{{ formatDate(item.created_at) }}</template>
         <template #actions="{ item }">
-          <v-btn size="small" color="info" variant="tonal" class="mr-3" :to="`/articles/${item.id}/edit`"><v-icon start size="small">mdi-pencil</v-icon>Edit</v-btn>
-          <v-btn size="small" color="error" variant="tonal" @click="deleteItem(item.id)"><v-icon start size="small">mdi-delete</v-icon>Delete</v-btn>
+          <v-btn size="small" color="info" variant="tonal" class="mr-2 text-caption" :to="`/articles/${item.id}/edit`"><v-icon start size="small">mdi-pencil</v-icon>Edit</v-btn>
+          <v-btn size="small" color="error" variant="tonal" class="text-caption" @click="deleteItem(item.id)"><v-icon start size="small">mdi-delete</v-icon>Delete</v-btn>
         </template>
       </DataTable>
     </template>

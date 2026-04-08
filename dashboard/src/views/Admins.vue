@@ -3,7 +3,7 @@
     <template #filters>
       <div class="d-flex align-center ga-3">
         <span class="text-body-2 font-weight-medium text-no-wrap">Search:</span>
-        <v-text-field v-model="search" placeholder="Search by name or email..." prepend-inner-icon="mdi-magnify" variant="outlined" density="compact" hide-details clearable style="flex:1" @update:model-value="handleSearch" />
+        <v-text-field v-model="search" placeholder="Search by name or email..." prepend-inner-icon="mdi-magnify" variant="outlined" density="compact" hide-details clearable style="flex:1; max-width:400px" @update:model-value="handleSearch" />
         <v-btn color="primary" variant="flat" @click="load"><v-icon start>mdi-magnify</v-icon>Search</v-btn>
       </div>
     </template>
@@ -14,11 +14,12 @@
         :total="total" :page="page" :totalPages="totalPages" :visiblePages="visiblePages"
         :sortBy="sortBy" :sortDir="sortDir"
         @sort="toggleSort" @page="goToPage"
+        editBasePath="/admins"
         emptyText="No admins found"
       >
         <template #actions="{ item }">
-          <v-btn size="small" color="info" variant="tonal" class="mr-3" :to="`/admins/${item.id}/edit`"><v-icon start size="small">mdi-pencil</v-icon>Edit</v-btn>
-          <v-btn v-if="item.id !== currentAdminId" size="small" color="error" variant="tonal" @click="deleteItem(item.id)"><v-icon start size="small">mdi-delete</v-icon>Delete</v-btn>
+          <v-btn size="small" color="info" variant="tonal" class="mr-2 text-caption" :to="`/admins/${item.id}/edit`"><v-icon start size="small">mdi-pencil</v-icon>Edit</v-btn>
+          <v-btn v-if="item.id !== currentAdminId" size="small" color="error" variant="tonal" class="text-caption" @click="deleteItem(item.id)"><v-icon start size="small">mdi-delete</v-icon>Delete</v-btn>
           <v-chip v-else size="small" color="primary" variant="tonal">You</v-chip>
         </template>
         <template #cell-created_at="{ item }">{{ formatDate(item.created_at) }}</template>

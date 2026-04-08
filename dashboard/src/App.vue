@@ -3,7 +3,6 @@
     <template v-if="isAuthenticated">
       <!-- Top App Bar -->
       <v-app-bar color="white" elevation="2" density="comfortable">
-        <v-app-bar-nav-icon @click="drawer = !drawer" />
 
         <router-link to="/" class="d-flex align-center text-decoration-none ml-1" style="cursor:pointer">
           <img src="@/assets/logo.png" alt="Logo" style="height:28px" class="mr-2" />
@@ -12,63 +11,50 @@
 
         <v-spacer />
 
-        <v-menu offset-y>
-          <template v-slot:activator="{ props }">
-            <v-btn v-bind="props" variant="text" class="mr-2 text-none">
-              <v-avatar size="32" class="mr-2">
-                <v-icon color="grey-darken-1" size="32">mdi-account-circle</v-icon>
-              </v-avatar>
-              <span class="d-none d-sm-inline text-body-2">{{ adminName || adminEmail }}</span>
-              <v-icon end size="small">mdi-chevron-down</v-icon>
-            </v-btn>
-          </template>
+        <v-btn variant="text" class="text-none mr-2" to="/profile">
+          <v-avatar size="32" class="mr-2">
+            <v-icon color="grey-darken-1" size="32">mdi-account-circle</v-icon>
+          </v-avatar>
+          <span class="d-none d-sm-inline text-body-2">{{ adminName || adminEmail }}</span>
+        </v-btn>
 
-          <v-list density="compact" min-width="180">
-            <v-list-item to="/profile" prepend-icon="mdi-account-circle">
-              <v-list-item-title>Profile</v-list-item-title>
-            </v-list-item>
-            <v-divider />
-            <v-list-item @click="doLogout" prepend-icon="mdi-logout" base-color="error">
-              <v-list-item-title>Logout</v-list-item-title>
-            </v-list-item>
-          </v-list>
-        </v-menu>
+        <v-btn variant="text" color="error" class="text-none" @click="doLogout">
+          <v-icon start>mdi-logout</v-icon>
+          Log out
+        </v-btn>
       </v-app-bar>
 
       <!-- Sidebar -->
-      <v-navigation-drawer v-model="drawer" :rail="rail" @click="rail = false">
-        <v-list-item
-          :prepend-icon="rail ? 'mdi-chevron-right' : 'mdi-chevron-left'"
-          @click.stop="rail = !rail"
-          class="mb-1"
-        >
-          <v-list-item-title v-if="!rail" class="text-body-2 text-grey">Collapse</v-list-item-title>
-        </v-list-item>
+      <v-navigation-drawer permanent width="100">
+        <v-list nav class="d-flex flex-column align-center pa-2" style="gap: 0;">
+          <template v-for="(item, index) in navItems" :key="item.to">
+            <v-list-item
+              :to="item.to"
+              :active="isActive(item)"
+              color="primary"
+              class="sidebar-item text-center pa-2"
+              rounded="lg"
+            >
+              <div class="d-flex flex-column align-center">
+                <v-icon size="24">{{ item.icon }}</v-icon>
+                <span class="text-caption mt-1">{{ item.title }}</span>
+              </div>
+            </v-list-item>
+            <v-divider class="my-1" style="width: 100%;" />
+          </template>
 
-        <v-divider />
-
-        <v-list nav density="compact">
-          <v-list-item
-            v-for="item in navItems"
-            :key="item.to"
-            :to="item.to"
-            :prepend-icon="item.icon"
-            :title="item.title"
-            :active="isActive(item)"
-            color="primary"
-          />
-        </v-list>
-
-        <v-divider />
-
-        <v-list nav density="compact">
           <v-list-item
             to="/profile"
-            prepend-icon="mdi-account-circle"
-            title="Profile"
             :active="$route.path === '/profile'"
             color="primary"
-          />
+            class="sidebar-item text-center pa-2"
+            rounded="lg"
+          >
+            <div class="d-flex flex-column align-center">
+              <v-icon size="24">mdi-account-circle</v-icon>
+              <span class="text-caption mt-1">Profile</span>
+            </div>
+          </v-list-item>
         </v-list>
       </v-navigation-drawer>
     </template>
@@ -103,8 +89,6 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const isAuthenticated = computed(() => route.meta.requiresAuth)
-    const drawer = ref(true)
-    const rail = ref(false)
 
     const adminName = ref('')
     const adminEmail = ref('admin')
@@ -219,7 +203,30 @@ export default {
     }, { immediate: true })
     onBeforeUnmount(() => { disconnectSSE(); stopPolling() })
 
-    return { isAuthenticated, drawer, rail, adminName, adminEmail, navItems, isActive, doLogout, sessionReplaced }
+    return { isAuthenticated, adminName, adminEmail, navItems, isActive, doLogout, sessionReplaced }
   }
 }
 </script>
+
+<style scoped>
+.sidebar-item {
+  width: 80px;
+  min-height: auto;
+}
+.sidebar-item :deep(.v-list-item__content) {
+  padding: 0;
+}
+.sidebar-item.v-list-item--active {
+  background-color: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary)) !important;
+}
+.sidebar-item.v-list-item--active :deep(.v-icon) {
+  color: rgb(var(--v-theme-on-primary)) !important;
+}
+.sidebar-item.v-list-item--active span {
+  color: rgb(var(--v-theme-on-primary)) !important;
+}
+.sidebar-item.v-list-item--active :deep(.v-list-item__overlay) {
+  opacity: 0 !important;
+}
+</style>
