@@ -1,50 +1,23 @@
 <template>
-  <div>
-    <PageBanner :title="isEdit ? 'Edit Admin' : 'Register Admin'" />
-
-    <v-container style="max-width: 800px">
-      <v-card variant="outlined">
-        <v-card-text class="pa-6">
-          <v-form @submit.prevent="handleSubmit">
-            <v-text-field v-model="form.name" label="Name *" variant="outlined" required class="mb-4" />
-            <v-text-field v-model="form.email" label="Email *" type="email" variant="outlined" required class="mb-4" />
-            <v-text-field
-              v-model="form.password"
-              :label="isEdit ? 'New Password (leave blank to keep)' : 'Password *'"
-              :type="showPassword ? 'text' : 'password'"
-              variant="outlined"
-              :required="!isEdit"
-              class="mb-4"
-            >
-              <template v-slot:append-inner>
-                <v-icon @click="showPassword = !showPassword" style="opacity:0.5;cursor:pointer">{{ showPassword ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>
-              </template>
-            </v-text-field>
-            <p v-if="error" class="text-error text-body-2 mb-4">{{ error }}</p>
-          </v-form>
-        </v-card-text>
-      </v-card>
-
-      <div class="d-flex justify-space-between mt-6">
-        <v-btn color="primary" variant="flat" rounded="pill" to="/admins">
-          <v-icon start>mdi-arrow-left</v-icon>Back
-        </v-btn>
-        <v-btn color="success" variant="flat" rounded="pill" :loading="loading" @click="handleSubmit">
-          <v-icon start>mdi-content-save</v-icon>Save
-        </v-btn>
-      </div>
-    </v-container>
-  </div>
+  <FormPage :title="isEdit ? 'Edit Admin' : 'Register Admin'" backTo="/admins" :error="error" :loading="loading" @submit="handleSubmit">
+    <v-text-field v-model="form.name" label="Name *" variant="outlined" required class="mb-4" />
+    <v-text-field v-model="form.email" label="Email *" type="email" variant="outlined" required class="mb-4" />
+    <v-text-field v-model="form.password" :label="isEdit ? 'New Password (leave blank to keep)' : 'Password *'" :type="showPassword ? 'text' : 'password'" variant="outlined" :required="!isEdit" class="mb-4">
+      <template v-slot:append-inner>
+        <v-icon @click="showPassword = !showPassword" style="opacity:0.5;cursor:pointer">{{ showPassword ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>
+      </template>
+    </v-text-field>
+  </FormPage>
 </template>
 
 <script>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
-import PageBanner from '../components/PageBanner.vue'
+import FormPage from '../components/FormPage.vue'
 
 export default {
-  components: { PageBanner },
+  components: { FormPage },
   setup() {
     const route = useRoute(); const router = useRouter()
     const form = ref({ name: '', email: '', password: '' }); const error = ref(''); const loading = ref(false); const showPassword = ref(false)

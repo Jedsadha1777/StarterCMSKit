@@ -58,6 +58,18 @@
             color="primary"
           />
         </v-list>
+
+        <v-divider />
+
+        <v-list nav density="compact">
+          <v-list-item
+            to="/profile"
+            prepend-icon="mdi-account-circle"
+            title="Profile"
+            :active="$route.path === '/profile'"
+            color="primary"
+          />
+        </v-list>
       </v-navigation-drawer>
     </template>
 
@@ -115,7 +127,6 @@ export default {
       { to: '/articles',  icon: 'mdi-newspaper',       title: 'Articles',   match: '/articles' },
       { to: '/users',     icon: 'mdi-account-group',   title: 'Users',      match: '/users' },
       { to: '/admins',    icon: 'mdi-shield-account',  title: 'Admins',     match: '/admins' },
-      { to: '/profile',   icon: 'mdi-account-circle',  title: 'Profile',    match: '/profile' },
     ]
 
     const isActive = (item) => {
