@@ -257,5 +257,21 @@ export default {
 
   deleteAdmin(id) {
     return api.delete(`/admins/${id}`)
+  },
+
+  getSettings() {
+    return api.get('/settings')
+  },
+
+  updateSettings(data) {
+    return api.put('/settings', data)
+  },
+
+  uploadSettingFile(field, file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/settings/upload/${field}`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
   }
 }

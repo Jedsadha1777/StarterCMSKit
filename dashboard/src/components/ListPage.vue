@@ -2,7 +2,7 @@
   <div>
     <PageBanner :title="title" />
 
-    <v-container>
+    <v-container fluid>
       <!-- Create button -->
       <div class="d-flex justify-end mb-4">
         <v-btn color="success" variant="flat" :to="createTo">
@@ -19,12 +19,6 @@
         <slot name="table" />
       </v-card>
 
-      <!-- Back -->
-      <div class="mt-4">
-        <v-btn color="primary" variant="flat" rounded="pill" :to="backTo">
-          <v-icon start>mdi-arrow-left</v-icon>Back
-        </v-btn>
-      </div>
     </v-container>
   </div>
 </template>

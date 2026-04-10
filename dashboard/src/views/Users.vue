@@ -18,8 +18,8 @@
         emptyText="No users found"
       >
         <template #actions="{ item }">
-          <v-btn size="small" color="info" variant="tonal" class="mr-2 text-caption" :to="`/users/${item.id}/edit`"><v-icon start size="small">mdi-pencil</v-icon>Edit</v-btn>
-          <v-btn size="small" color="error" variant="tonal" class="text-caption" @click="deleteItem(item.id)"><v-icon start size="small">mdi-delete</v-icon>Delete</v-btn>
+          <v-btn size="small" color="info" variant="tonal" class="mr-2 text-caption" style="min-width:80px" :to="`/users/${item.id}/edit`"><v-icon start size="small">mdi-pencil</v-icon>Edit</v-btn>
+          <v-btn size="small" color="error" variant="tonal" class="text-caption" style="min-width:80px" @click="deleteItem(item.id)"><v-icon start size="small">mdi-delete</v-icon>Delete</v-btn>
         </template>
         <template #cell-created_at="{ item }">{{ formatDate(item.created_at) }}</template>
       </DataTable>
@@ -50,7 +50,7 @@ export default {
     async function load() {
       dt.loading.value = true
       try {
-        const params = { page: dt.page.value, per_page: 10 }
+        const params = { page: dt.page.value, per_page: dt.perPage() }
         if (search.value) { params.name = search.value; params.email = search.value; params.search_logic = 'OR' }
         params.sort_by = dt.sortParam.value
         const { data } = await api.getUsers(params)

@@ -38,5 +38,6 @@ const style = document.createElement('style')
 style.textContent = `
   .v-table tbody tr:hover { background: #e8e8e8 !important; }
   .v-table tbody td { padding-top: 12px !important; padding-bottom: 12px !important; }
+  .v-toolbar__content { padding-left: 16px !important; padding-right: 16px !important; }
 `
 document.head.appendChild(style)

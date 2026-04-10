@@ -25,6 +25,7 @@ const routeLabels = {
   'articles': 'Articles',
   'users': 'Users',
   'admins': 'Admins',
+  'settings': 'Settings',
   'profile': 'Profile',
   'new': 'Create',
   'edit': 'Edit',

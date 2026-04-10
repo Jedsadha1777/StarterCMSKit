@@ -1,6 +1,8 @@
 import { ref, computed } from 'vue'
+import { useSiteSettings } from './useSiteSettings'
 
 export function useDataTable(loadFn) {
+  const { formatDate, perPage } = useSiteSettings()
   const items = ref([])
   const loading = ref(true)
   const page = ref(1)
@@ -39,14 +41,8 @@ export function useDataTable(loadFn) {
 
   const sortParam = computed(() => (sortDir.value === 'desc' ? '-' : '') + sortBy.value)
 
-  const formatDate = (d) => {
-    if (!d) return '-'
-    const date = new Date(d)
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
-  }
-
   return {
     items, loading, page, total, totalPages, sortBy, sortDir,
-    toggleSort, sortIcon, visiblePages, goToPage, handleSearch, sortParam, formatDate,
+    toggleSort, sortIcon, visiblePages, goToPage, handleSearch, sortParam, formatDate, perPage,
   }
 }

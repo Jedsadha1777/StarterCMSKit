@@ -5,7 +5,7 @@
     <div class="d-flex ga-4 mb-4 align-center">
       <v-select v-model="form.status" :items="['draft', 'published']" label="Status" variant="outlined" style="max-width:200px" @update:model-value="onStatusChange" />
       <template v-if="form.status === 'published'">
-        <v-text-field v-model="publishDatePart" label="Date" type="date" variant="outlined" style="max-width:200px" />
+        <DatePicker v-model="publishDatePart" label="Publish Date" />
         <v-text-field v-model="publishTimePart" label="Time (HH:MM)" variant="outlined" placeholder="14:30" style="max-width:140px" maxlength="5" />
       </template>
     </div>
@@ -17,9 +17,10 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '../api'
 import FormPage from '../components/FormPage.vue'
+import DatePicker from '../components/DatePicker.vue'
 
 export default {
-  components: { FormPage },
+  components: { FormPage, DatePicker },
   setup() {
     const route = useRoute(); const router = useRouter()
     const form = ref({ title: '', content: '', status: 'draft' }); const error = ref(''); const loading = ref(false)

@@ -1,6 +1,6 @@
 <template>
   <div style="padding: 0 16px;">
-    <v-table v-if="!loading && items.length > 0" density="comfortable">
+    <v-table v-if="!loading && items.length > 0" density="comfortable" class="border rounded">
       <thead>
         <tr class="bg-grey-lighten-3">
           <!-- Dynamic columns -->
@@ -15,7 +15,7 @@
             <v-icon v-if="col.sortable" size="x-small">{{ sortIcon(col.key) }}</v-icon>
           </th>
           <!-- Actions column -->
-          <th class="text-center font-weight-bold text-caption" style="min-width:200px;width:200px">Actions</th>
+          <th class="text-right font-weight-bold text-caption" style="min-width:200px;width:200px">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -31,7 +31,7 @@
             </slot>
           </td>
           <!-- Actions cell -->
-          <td class="text-center">
+          <td class="text-right">
             <slot name="actions" :item="item" />
           </td>
         </tr>

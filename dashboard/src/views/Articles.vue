@@ -8,9 +8,9 @@
         <v-select v-model="filterStatus" :items="statusOptions" variant="outlined" density="compact" hide-details clearable style="max-width:150px" @update:model-value="handleSearch" />
         <div class="d-flex align-center ga-3" style="flex-shrink: 0;">
           <span class="text-body-2 font-weight-medium text-no-wrap">From:</span>
-          <v-text-field v-model="dateFrom" type="date" variant="outlined" density="compact" hide-details clearable style="max-width:180px" @update:model-value="handleSearch" />
+          <DatePicker v-model="dateFrom" label="From" @update:model-value="handleSearch" />
           <span class="text-body-2 font-weight-medium text-no-wrap">To:</span>
-          <v-text-field v-model="dateTo" type="date" variant="outlined" density="compact" hide-details clearable style="max-width:180px" @update:model-value="handleSearch" />
+          <DatePicker v-model="dateTo" label="To" @update:model-value="handleSearch" />
         </div>
         <v-btn color="primary" variant="flat" @click="load"><v-icon start>mdi-magnify</v-icon>Search</v-btn>
       </div>
@@ -31,8 +31,8 @@
         <template #cell-publish_date="{ item }">{{ item.publish_date ? formatDate(item.publish_date) : '-' }}</template>
         <template #cell-created_at="{ item }">{{ formatDate(item.created_at) }}</template>
         <template #actions="{ item }">
-          <v-btn size="small" color="info" variant="tonal" class="mr-2 text-caption" :to="`/articles/${item.id}/edit`"><v-icon start size="small">mdi-pencil</v-icon>Edit</v-btn>
-          <v-btn size="small" color="error" variant="tonal" class="text-caption" @click="deleteItem(item.id)"><v-icon start size="small">mdi-delete</v-icon>Delete</v-btn>
+          <v-btn size="small" color="info" variant="tonal" class="mr-2 text-caption" style="min-width:80px" :to="`/articles/${item.id}/edit`"><v-icon start size="small">mdi-pencil</v-icon>Edit</v-btn>
+          <v-btn size="small" color="error" variant="tonal" class="text-caption" style="min-width:80px" @click="deleteItem(item.id)"><v-icon start size="small">mdi-delete</v-icon>Delete</v-btn>
         </template>
       </DataTable>
     </template>
@@ -44,10 +44,11 @@ import { onMounted, ref } from 'vue'
 import api from '../api'
 import ListPage from '../components/ListPage.vue'
 import DataTable from '../components/DataTable.vue'
+import DatePicker from '../components/DatePicker.vue'
 import { useDataTable } from '../composables/useDataTable'
 
 export default {
-  components: { ListPage, DataTable },
+  components: { ListPage, DataTable, DatePicker },
   setup() {
     const search = ref('')
     const filterStatus = ref(null)
@@ -68,7 +69,7 @@ export default {
     async function load() {
       dt.loading.value = true
       try {
-        const params = { page: dt.page.value, per_page: 10 }
+        const params = { page: dt.page.value, per_page: dt.perPage() }
         if (search.value) { params.title = search.value; params.content = search.value; params.search_logic = 'OR' }
         if (filterStatus.value) params.status = filterStatus.value
         if (dateFrom.value) params.created_at_min = dateFrom.value + 'T00:00:00'

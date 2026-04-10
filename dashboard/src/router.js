@@ -8,6 +8,7 @@ import UserForm from './views/UserForm.vue'
 import Admins from './views/Admins.vue'
 import AdminForm from './views/AdminForm.vue'
 import Profile from './views/Profile.vue'
+import Settings from './views/Settings.vue'
 
 const routes = [
   { path: '/login', name: 'Login', component: Login, meta: { guest: true } },
@@ -21,6 +22,7 @@ const routes = [
   { path: '/admins', name: 'Admins', component: Admins, meta: { requiresAuth: true } },
   { path: '/admins/new', name: 'AdminNew', component: AdminForm, meta: { requiresAuth: true } },
   { path: '/admins/:id/edit', name: 'AdminEdit', component: AdminForm, meta: { requiresAuth: true } },
+  { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true } },
   { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]

@@ -5,8 +5,8 @@
       <v-app-bar color="white" elevation="2" density="comfortable">
 
         <router-link to="/" class="d-flex align-center text-decoration-none ml-1" style="cursor:pointer">
-          <img src="@/assets/logo.png" alt="Logo" style="height:28px" class="mr-2" />
-          <span class="text-h6 font-weight-bold" style="color:#2c3e50">Service Report Tool Admin</span>
+          <img :src="siteLogoUrl || defaultLogo" alt="Logo" style="height:44px" class="mr-2" />
+          <span class="text-h6 font-weight-bold" style="color:#2c3e50">{{ siteTitle }}</span>
         </router-link>
 
         <v-spacer />
@@ -55,6 +55,21 @@
               <span class="text-caption mt-1">Profile</span>
             </div>
           </v-list-item>
+
+          <v-divider class="my-1" style="width: 100%;" />
+
+          <v-list-item
+            to="/settings"
+            :active="$route.path === '/settings'"
+            color="primary"
+            class="sidebar-item text-center pa-2"
+            rounded="lg"
+          >
+            <div class="d-flex flex-column align-center">
+              <v-icon size="24">mdi-cog</v-icon>
+              <span class="text-caption mt-1">Settings</span>
+            </div>
+          </v-list-item>
         </v-list>
       </v-navigation-drawer>
     </template>
@@ -78,6 +93,9 @@ import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import SessionReplacedModal from './components/SessionReplacedModal.vue'
+import { useTheme } from 'vuetify'
+import { useSiteSettings } from './composables/useSiteSettings'
+import defaultLogoImg from '@/assets/logo.png'
 
 const API_BASE_URL = 'http://127.0.0.1:5000/admin-api'
 const SSE_RECONNECT_DELAY = 3000
@@ -89,6 +107,11 @@ export default {
     const route = useRoute()
     const router = useRouter()
     const isAuthenticated = computed(() => route.meta.requiresAuth)
+    const { settings, loadSettings, logoUrl, setThemeRef } = useSiteSettings()
+    setThemeRef(useTheme())
+    const defaultLogo = defaultLogoImg
+    const siteTitle = computed(() => settings.site_title || 'Admin Panel')
+    const siteLogoUrl = computed(() => logoUrl())
 
     const adminName = ref('')
     const adminEmail = ref('admin')
@@ -198,12 +221,17 @@ export default {
     }
 
     watch(isAuthenticated, (v) => {
-      if (v) { connectSSE(); startPolling() }
+      if (v) { connectSSE(); startPolling(); loadSettings() }
       else { disconnectSSE(); stopPolling() }
     }, { immediate: true })
+
+    // Reload settings when navigating back from settings page
+    watch(() => route.path, (newPath, oldPath) => {
+      if (oldPath === '/settings' && newPath !== '/settings') loadSettings()
+    })
     onBeforeUnmount(() => { disconnectSSE(); stopPolling() })
 
-    return { isAuthenticated, adminName, adminEmail, navItems, isActive, doLogout, sessionReplaced }
+    return { isAuthenticated, siteTitle, siteLogoUrl, defaultLogo, adminName, adminEmail, navItems, isActive, doLogout, sessionReplaced }
   }
 }
 </script>

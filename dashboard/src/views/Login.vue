@@ -4,8 +4,8 @@
       <v-col cols="12" sm="6" md="4" lg="3">
         <v-card elevation="4" class="pa-8">
           <div class="text-center mb-8">
-            <img src="@/assets/logo.png" alt="Logo" style="height:64px" />
-            <div class="text-h5 font-weight-bold mt-2" style="color:#2c3e50">Service Report Tool Admin</div>
+            <img :src="savedLogo || defaultLogo" alt="Logo" style="height:64px" />
+            <div class="text-h5 font-weight-bold mt-2" style="color:#2c3e50">{{ savedTitle }}</div>
             <div class="text-body-2 text-grey">web control panel</div>
           </div>
 
@@ -63,13 +63,21 @@
 </template>
 
 <script>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
+import { useSiteSettings } from '../composables/useSiteSettings'
+import defaultLogoImg from '@/assets/logo.png'
+
+const API_BASE = 'http://127.0.0.1:5000'
 
 export default {
   setup() {
     const router = useRouter()
+    const { settings, loadSettings } = useSiteSettings()
+    const defaultLogo = defaultLogoImg
+    const savedTitle = computed(() => settings.site_title || 'Admin Panel')
+    const savedLogo = computed(() => settings.logo ? API_BASE + settings.logo : '')
     const email = ref('')
     const password = ref('')
     const showPassword = ref(false)
@@ -85,6 +93,7 @@ export default {
         localStorage.setItem('refresh_token', data.refresh_token)
         localStorage.setItem('admin', JSON.stringify(data.admin))
         window.dispatchEvent(new Event('storage-updated'))
+        await loadSettings()
         router.push('/')
       } catch (err) {
         error.value = err.response?.data?.message || 'Login failed'
@@ -93,7 +102,7 @@ export default {
       }
     }
 
-    return { email, password, showPassword, error, loading, handleLogin }
+    return { defaultLogo, savedTitle, savedLogo, email, password, showPassword, error, loading, handleLogin }
   }
 }
 </script>
