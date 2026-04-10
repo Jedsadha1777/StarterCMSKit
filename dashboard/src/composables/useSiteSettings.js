@@ -1,7 +1,6 @@
 import { reactive } from 'vue'
 import api from '../api'
-
-const API_BASE = 'http://127.0.0.1:5000'
+import { API_BASE } from '../config'
 
 const settings = reactive({
   site_title: 'Admin Panel',

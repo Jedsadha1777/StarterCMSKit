@@ -34,11 +34,13 @@ import api from '../api'
 import ListPage from '../components/ListPage.vue'
 import DataTable from '../components/DataTable.vue'
 import { useDataTable } from '../composables/useDataTable'
+import { useAdmin } from '../composables/useAdmin'
 
 export default {
   components: { ListPage, DataTable },
   setup() {
-    const currentAdminId = JSON.parse(localStorage.getItem('admin') || '{}').id
+    const { admin } = useAdmin()
+    const currentAdminId = admin.id
     const search = ref('')
 
     const columns = [

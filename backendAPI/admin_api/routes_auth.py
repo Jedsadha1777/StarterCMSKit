@@ -12,6 +12,7 @@ from admin_api import admin_bp
 from extensions import db
 from models import Admin, AdminSession
 from decorators import admin_required
+from utils import validate_required, validate_password
 from session_cache import session_cache
 from sse_manager import sse_manager
 
@@ -74,8 +75,8 @@ def login():
     """Admin login — single session enforcement with grace period."""
     data = request.get_json()
 
-    if not data or not data.get('email') or not data.get('password'):
-        return jsonify({'message': 'Email and password are required'}), 400
+    err = validate_required(data, ['email', 'password'])
+    if err: return err
 
     admin = Admin.query.filter_by(email=data['email']).first()
     if not admin or not admin.check_password(data['password']):
@@ -141,7 +142,7 @@ def login():
     response = {
         'access_token': access_token,
         'refresh_token': raw_refresh,
-        'admin': admin.to_dict(),
+        'admin': admin.to_dict(include_permissions=True),
         'session': new_session.to_dict(),
     }
     if replaced_info:
@@ -357,7 +358,7 @@ def check_session(admin):
 @admin_required
 def profile(admin):
     if request.method == 'GET':
-        return jsonify(admin.to_dict()), 200
+        return jsonify(admin.to_dict(include_permissions=True)), 200
 
     data = request.get_json()
     if not data or not data.get('name'):
@@ -369,7 +370,7 @@ def profile(admin):
     admin.name = data['name']
     db.session.commit()
 
-    return jsonify(admin.to_dict()), 200
+    return jsonify(admin.to_dict(include_permissions=True)), 200
 
 
 @admin_bp.route('/profile/change-password', methods=['PUT'])
@@ -377,10 +378,15 @@ def profile(admin):
 @admin_required
 def change_password(admin):
     data = request.get_json()
-    if not data or not data.get('old_password') or not data.get('new_password'):
-        return jsonify({'message': 'Old password and new password are required'}), 400
+
+    err = validate_required(data, ['old_password', 'new_password'])
+    if err: return err
+
     if not admin.check_password(data['old_password']):
         return jsonify({'message': 'Invalid old password'}), 401
+
+    err = validate_password(data['new_password'])
+    if err: return err
 
     admin.set_password(data['new_password'])
 

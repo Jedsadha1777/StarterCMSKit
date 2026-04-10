@@ -1,19 +1,20 @@
 from flask import request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import jwt_required
 from admin_api import admin_bp
 from extensions import db
-from models import Admin
+from models import Admin, AdminRole, Article
 from decorators import admin_required
-from utils import paginate_query, apply_filters, apply_sorting
+from utils import paginate_query, apply_filters, apply_sorting, format_paginated, validate_required, validate_password, get_or_404, check_unique
 from datetime import datetime
 
 
 @admin_bp.route('/admins', methods=['GET'])
 @jwt_required()
 @admin_required
-def get_admins(_):
-    """Get all admins"""
+def get_admins(current_admin):
     query = Admin.query
+    if not current_admin.has_permission('super_admin', 'view'):
+        query = query.filter(Admin.role != AdminRole.SUPER_ADMIN)
 
     filters = {
         'name': {'type': 'fuzzy'},
@@ -25,30 +26,29 @@ def get_admins(_):
     query = apply_sorting(query, Admin, sortable_fields=['name', 'email', 'created_at'], default_sort='-created_at')
     result = paginate_query(query, default_per_page=10)
 
-    return jsonify({
-        'admins': [a.to_dict() for a in result['items']],
-        'total': result['total'],
-        'page': result['page'],
-        'per_page': result['per_page'],
-        'pages': result['pages']
-    }), 200
+    return format_paginated('admins', result)
 
 
 @admin_bp.route('/admins', methods=['POST'])
 @jwt_required()
 @admin_required
-def create_admin(_):
-    """Create new admin"""
+def create_admin(current_admin):
+    if not current_admin.has_permission('admins', 'create'):
+        return jsonify({'message': 'Permission denied'}), 403
+
     data = request.get_json()
 
-    if not data or not data.get('name') or not data.get('email') or not data.get('password'):
-        return jsonify({'message': 'Name, email and password are required'}), 400
+    err = validate_required(data, ['name', 'email', 'password'])
+    if err: return err
 
-    if Admin.query.filter_by(name=data['name']).first():
-        return jsonify({'message': 'Name already taken'}), 400
+    err = check_unique(Admin, 'name', data['name'])
+    if err: return err
 
-    if Admin.query.filter_by(email=data['email']).first():
-        return jsonify({'message': 'Email already exists'}), 400
+    err = check_unique(Admin, 'email', data['email'])
+    if err: return err
+
+    err = validate_password(data['password'])
+    if err: return err
 
     admin = Admin(name=data['name'], email=data['email'])
     admin.set_password(data['password'])
@@ -62,35 +62,36 @@ def create_admin(_):
 @jwt_required()
 @admin_required
 def get_admin(_, admin_id):
-    """Get admin by public_id"""
-    admin = Admin.query.filter_by(public_id=admin_id).first()
-    if not admin:
-        return jsonify({'message': 'Admin not found'}), 404
+    admin, err = get_or_404(Admin, admin_id)
+    if err: return err
     return jsonify(admin.to_dict()), 200
 
 
 @admin_bp.route('/admins/<admin_id>', methods=['PUT'])
 @jwt_required()
 @admin_required
-def update_admin(_, admin_id):
-    """Update admin"""
-    admin = Admin.query.filter_by(public_id=admin_id).first()
-    if not admin:
-        return jsonify({'message': 'Admin not found'}), 404
+def update_admin(current_admin, admin_id):
+    if not current_admin.has_permission('admins', 'edit'):
+        return jsonify({'message': 'Permission denied'}), 403
+
+    admin, err = get_or_404(Admin, admin_id)
+    if err: return err
 
     data = request.get_json()
 
     if data.get('name'):
-        if Admin.query.filter(Admin.name == data['name'], Admin.id != admin.id).first():
-            return jsonify({'message': 'Name already taken'}), 400
+        err = check_unique(Admin, 'name', data['name'], exclude_id=admin.id)
+        if err: return err
         admin.name = data['name']
 
     if data.get('email'):
-        if Admin.query.filter(Admin.email == data['email'], Admin.id != admin.id).first():
-            return jsonify({'message': 'Email already exists'}), 400
+        err = check_unique(Admin, 'email', data['email'], exclude_id=admin.id)
+        if err: return err
         admin.email = data['email']
 
     if data.get('password'):
+        err = validate_password(data['password'])
+        if err: return err
         admin.set_password(data['password'])
 
     db.session.commit()
@@ -101,10 +102,11 @@ def update_admin(_, admin_id):
 @jwt_required()
 @admin_required
 def delete_admin(current_admin, admin_id):
-    """Delete other admin (cannot delete self, must keep at least 1)"""
-    admin = Admin.query.filter_by(public_id=admin_id).first()
-    if not admin:
-        return jsonify({'message': 'Admin not found'}), 404
+    if not current_admin.has_permission('admins', 'delete'):
+        return jsonify({'message': 'Permission denied'}), 403
+
+    admin, err = get_or_404(Admin, admin_id)
+    if err: return err
 
     if current_admin.id == admin.id:
         return jsonify({'message': 'Cannot delete your own account. Use the Profile page instead.'}), 400
@@ -112,6 +114,7 @@ def delete_admin(current_admin, admin_id):
     if Admin.query.count() <= 1:
         return jsonify({'message': 'At least one admin is required. Cannot delete.'}), 400
 
+    Article.query.filter_by(admin_id=admin.id).update({'admin_id': None})
     db.session.delete(admin)
     db.session.commit()
     return jsonify({'message': 'Admin deleted successfully'}), 200
@@ -121,11 +124,10 @@ def delete_admin(current_admin, admin_id):
 @jwt_required()
 @admin_required
 def delete_own_account(admin):
-    """Delete own account — requires password confirmation, must keep at least 1 admin"""
     data = request.get_json()
 
-    if not data or not data.get('password'):
-        return jsonify({'message': 'Password is required'}), 400
+    err = validate_required(data, ['password'])
+    if err: return err
 
     if not admin.check_password(data['password']):
         return jsonify({'message': 'Invalid password'}), 401
@@ -133,7 +135,6 @@ def delete_own_account(admin):
     if Admin.query.count() <= 1:
         return jsonify({'message': 'At least one admin is required. Cannot delete.'}), 400
 
-    # Revoke all sessions
     from models import AdminSession
     from session_cache import session_cache
     sessions = AdminSession.query.filter(
@@ -144,6 +145,7 @@ def delete_own_account(admin):
         s.status = 'revoked'
         session_cache.invalidate(s.id)
 
+    Article.query.filter_by(admin_id=admin.id).update({'admin_id': None})
     db.session.delete(admin)
     db.session.commit()
     return jsonify({'message': 'Account deleted successfully'}), 200

@@ -115,16 +115,17 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '../api'
 import PageBanner from '../components/PageBanner.vue'
+import { useAdmin } from '../composables/useAdmin'
 
 export default {
   components: { PageBanner },
   setup() {
     const router = useRouter()
-    const admin = ref(JSON.parse(localStorage.getItem('admin') || '{}'))
+    const { admin, save } = useAdmin()
 
     // Name
     const showName = ref(false)
-    const newName = ref(admin.value.name || '')
+    const newName = ref(admin.name || '')
     const nameError = ref(''); const nameSuccess = ref(''); const nameLoading = ref(false)
 
     const handleChangeName = async () => {
@@ -133,9 +134,7 @@ export default {
       nameLoading.value = true
       try {
         const { data } = await api.updateProfile({ name: newName.value.trim() })
-        admin.value = data
-        localStorage.setItem('admin', JSON.stringify(data))
-        window.dispatchEvent(new Event('storage-updated'))
+        save(data)
         nameSuccess.value = 'Name updated'
       } catch (err) { nameError.value = err.response?.data?.message || 'Failed' }
       finally { nameLoading.value = false }

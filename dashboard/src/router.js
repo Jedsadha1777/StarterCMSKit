@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { useAdmin } from './composables/useAdmin'
 import Login from './views/Login.vue'
 import Dashboard from './views/Dashboard.vue'
 import Articles from './views/Articles.vue'
@@ -13,16 +14,16 @@ import Settings from './views/Settings.vue'
 const routes = [
   { path: '/login', name: 'Login', component: Login, meta: { guest: true } },
   { path: '/', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } },
-  { path: '/articles', name: 'Articles', component: Articles, meta: { requiresAuth: true } },
-  { path: '/articles/new', name: 'ArticleNew', component: ArticleForm, meta: { requiresAuth: true } },
-  { path: '/articles/:id/edit', name: 'ArticleEdit', component: ArticleForm, meta: { requiresAuth: true } },
-  { path: '/users', name: 'Users', component: Users, meta: { requiresAuth: true } },
-  { path: '/users/new', name: 'UserNew', component: UserForm, meta: { requiresAuth: true } },
-  { path: '/users/:id/edit', name: 'UserEdit', component: UserForm, meta: { requiresAuth: true } },
-  { path: '/admins', name: 'Admins', component: Admins, meta: { requiresAuth: true } },
-  { path: '/admins/new', name: 'AdminNew', component: AdminForm, meta: { requiresAuth: true } },
-  { path: '/admins/:id/edit', name: 'AdminEdit', component: AdminForm, meta: { requiresAuth: true } },
-  { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true } },
+  { path: '/articles', name: 'Articles', component: Articles, meta: { requiresAuth: true, requires: 'articles.view' } },
+  { path: '/articles/new', name: 'ArticleNew', component: ArticleForm, meta: { requiresAuth: true, requires: 'articles.create' } },
+  { path: '/articles/:id/edit', name: 'ArticleEdit', component: ArticleForm, meta: { requiresAuth: true, requires: 'articles.edit' } },
+  { path: '/users', name: 'Users', component: Users, meta: { requiresAuth: true, requires: 'users.view' } },
+  { path: '/users/new', name: 'UserNew', component: UserForm, meta: { requiresAuth: true, requires: 'users.create' } },
+  { path: '/users/:id/edit', name: 'UserEdit', component: UserForm, meta: { requiresAuth: true, requires: 'users.edit' } },
+  { path: '/admins', name: 'Admins', component: Admins, meta: { requiresAuth: true, requires: 'admins.view' } },
+  { path: '/admins/new', name: 'AdminNew', component: AdminForm, meta: { requiresAuth: true, requires: 'admins.create' } },
+  { path: '/admins/:id/edit', name: 'AdminEdit', component: AdminForm, meta: { requiresAuth: true, requires: 'admins.edit' } },
+  { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true, requires: 'settings.view' } },
   { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
@@ -39,8 +40,13 @@ router.beforeEach((to, from, next) => {
   if (to.path === from.path) { next(); return }
 
   if (to.meta.requiresAuth) {
-    if (!hasToken || !hasRefreshToken) next('/login')
-    else next()
+    if (!hasToken || !hasRefreshToken) { next('/login'); return }
+    if (to.meta.requires) {
+      const [resource, action] = to.meta.requires.split('.')
+      const { can } = useAdmin()
+      if (!can(resource, action)) { next('/'); return }
+    }
+    next()
   } else if (to.meta.guest) {
     if (hasToken && hasRefreshToken) next('/')
     else next()

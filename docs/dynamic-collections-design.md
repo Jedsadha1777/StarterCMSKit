@@ -239,6 +239,35 @@ ADD INDEX idx_coll1_expired_at (_idx_expired_at);
    → Paginate ด้วย utils.py ที่มีอยู่
 ```
 
+### Trash & Permanent Delete
+
+```
+ลบ (Soft delete):
+5. DELETE /admin-api/collections/:id/rows/:row_id
+   → is_deleted = True
+   → row หายจาก list ปกติ แต่ยังอยู่ใน DB
+
+ดูถังขยะ:
+6. GET /admin-api/collections/:id/trash
+   → SELECT WHERE is_deleted = True
+
+กู้คืน:
+7. POST /admin-api/collections/:id/trash/:row_id/restore
+   → is_deleted = False
+   → row กลับมาแสดงใน list ปกติ
+
+ลบถาวร (Hard delete):
+8. DELETE /admin-api/collections/:id/trash/:row_id
+   → DELETE FROM collection_rows (ลบจริงจาก DB)
+   → DELETE FROM collection_relations ที่เกี่ยวข้อง (CASCADE)
+   → ข้อมูลหายถาวร กู้คืนไม่ได้
+
+ล้างถังขยะทั้งหมด:
+9. DELETE /admin-api/collections/:id/trash
+   → DELETE FROM collection_rows WHERE collection_id = :id AND is_deleted = True
+   → ลบจริงทุก row ในถังขยะของ collection นั้น
+```
+
 ---
 
 ## ตัวอย่างข้อมูล
@@ -313,13 +342,19 @@ ADD INDEX idx_coll1_expired_at (_idx_expired_at);
 - [ ] `GET    /admin-api/collections/:id/rows` — list rows (filter, sort, paginate)
 - [ ] `GET    /admin-api/collections/:id/rows/:row_id` — ดู row
 - [ ] `PUT    /admin-api/collections/:id/rows/:row_id` — แก้ row
-- [ ] `DELETE /admin-api/collections/:id/rows/:row_id` — soft delete row
+- [ ] `DELETE /admin-api/collections/:id/rows/:row_id` — soft delete row (ย้ายไปถังขยะ)
+
+- [ ] `GET    /admin-api/collections/:id/trash` — ดู rows ในถังขยะ
+- [ ] `POST   /admin-api/collections/:id/trash/:row_id/restore` — กู้คืน row
+- [ ] `DELETE /admin-api/collections/:id/trash/:row_id` — ลบถาวร (hard delete)
+- [ ] `DELETE /admin-api/collections/:id/trash` — ล้างถังขยะทั้งหมด
 
 ### Phase 4: Dashboard UI (Vue)
 
 - [ ] หน้า Collections list
 - [ ] หน้าสร้าง/แก้ไข Collection + กำหนด fields
 - [ ] หน้า Collection rows (ตาราง data + filter/sort)
+- [ ] หน้า Trash (ถังขยะ) — ดู, กู้คืน, ลบถาวร, ล้างทั้งหมด
 - [ ] Form สร้าง/แก้ไข row (dynamic form ตาม field definitions)
 - [ ] Relation picker component (many_to_one dropdown, many_to_many multi-select)
 

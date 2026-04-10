@@ -82,13 +82,13 @@ import api from '../api'
 import PageBanner from '../components/PageBanner.vue'
 import { useSiteSettings } from '../composables/useSiteSettings'
 
-const API_BASE_URL = 'http://127.0.0.1:5000'
+import { API_BASE } from '../config'
 
 export default {
   components: { PageBanner },
   setup() {
     const { loadSettings: reloadGlobal } = useSiteSettings()
-    const apiBase = API_BASE_URL
+    const apiBase = API_BASE
     const loadingPage = ref(true)
     const saving = ref(false)
     const error = ref('')

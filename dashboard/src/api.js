@@ -1,9 +1,7 @@
 import axios from 'axios'
 import router from './router'
+import { API_BASE_URL } from './config'
 
-const API_BASE_URL = 'http://127.0.0.1:5000/admin-api'
-
-// Global lock for refresh token
 let isRefreshing = false
 let failedQueue = []
 
@@ -24,7 +22,6 @@ const api = axios.create({
   withCredentials: true
 })
 
-// Request interceptor
 api.interceptors.request.use(
   config => {
     const token = localStorage.getItem('access_token')
@@ -33,29 +30,22 @@ api.interceptors.request.use(
     }
     return config
   },
-  error => {
-    return Promise.reject(error)
-  }
+  error => Promise.reject(error)
 )
 
-// Response interceptor
 api.interceptors.response.use(
   response => response,
   async error => {
     const originalRequest = error.config
 
-    // Handle network errors
     if (!error.response) {
-      console.error('Network error:', error.message)
       return Promise.reject({
         message: 'Connection error. Please check your internet.',
         type: 'NETWORK_ERROR'
       })
     }
 
-    // Handle 5xx errors
     if (error.response.status >= 500) {
-      console.error('Server error:', error.response.status)
       return Promise.reject({
         message: 'Server error. Please try again.',
         type: 'SERVER_ERROR',
@@ -63,12 +53,9 @@ api.interceptors.response.use(
       })
     }
 
-    // Handle 401 Unauthorized
     if (error.response.status === 401 && !originalRequest._retry) {
       const code = error.response.data?.code
 
-      // SESSION_REPLACED / TOKEN_REUSE_DETECTED → SSE modal handles notification
-      // fallback: if SSE disconnected, redirect after 2 seconds
       if (code === 'SESSION_REPLACED' || code === 'SESSION_REVOKED' || code === 'TOKEN_REUSE_DETECTED') {
         isRefreshing = false
         processQueue(error, null)
@@ -81,7 +68,6 @@ api.interceptors.response.use(
         return Promise.reject(error)
       }
 
-      // Prevent refresh loop
       if (originalRequest.url.includes('/refresh')) {
         isRefreshing = false
         localStorage.clear()
@@ -89,7 +75,6 @@ api.interceptors.response.use(
         return Promise.reject(error)
       }
 
-      // If already refreshing, queue the request
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
@@ -98,16 +83,14 @@ api.interceptors.response.use(
             originalRequest.headers.Authorization = `Bearer ${token}`
             return api(originalRequest)
           })
-          .catch(err => {
-            return Promise.reject(err)
-          })
+          .catch(err => Promise.reject(err))
       }
 
       originalRequest._retry = true
       isRefreshing = true
 
       const refreshToken = localStorage.getItem('refresh_token')
-      
+
       if (!refreshToken) {
         isRefreshing = false
         localStorage.clear()
@@ -116,46 +99,32 @@ api.interceptors.response.use(
       }
 
       try {
-        // Separate axios instance for refresh (bypass interceptor)
         const refreshApi = axios.create({
           baseURL: API_BASE_URL,
           timeout: 10000,
           withCredentials: true
         })
 
-        // Send expired access token as Bearer (server decodes with allow_expired=True)
-        // + opaque refresh token in body
         const expiredAccessToken = localStorage.getItem('access_token')
         const { data } = await refreshApi.post('/refresh', { refresh_token: refreshToken }, {
           headers: { Authorization: `Bearer ${expiredAccessToken}` }
         })
 
-        const newAccessToken = data.access_token
-        
-        // Update access token
-        localStorage.setItem('access_token', newAccessToken)
-        
-        // Update refresh token if present (rotating refresh tokens)
+        localStorage.setItem('access_token', data.access_token)
         if (data.refresh_token) {
           localStorage.setItem('refresh_token', data.refresh_token)
         }
 
-        // Update header of original request
-        originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
-        
-        // Process queued requests
-        processQueue(null, newAccessToken)
+        originalRequest.headers.Authorization = `Bearer ${data.access_token}`
+        processQueue(null, data.access_token)
         isRefreshing = false
 
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
         isRefreshing = false
-        
-        // Clear data and redirect
         localStorage.clear()
         router.push('/login')
-        
         return Promise.reject(refreshError)
       }
     }

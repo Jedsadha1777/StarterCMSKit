@@ -4,14 +4,14 @@ from admin_api import admin_bp
 from extensions import db
 from models import Admin, User
 from decorators import admin_required
-from utils import paginate_query, apply_filters, apply_sorting
+from utils import paginate_query, apply_filters, apply_sorting, format_paginated, validate_required, validate_password, get_or_404, check_unique
 from datetime import datetime
+
 
 @admin_bp.route('/users', methods=['GET'])
 @jwt_required()
 @admin_required
 def get_users(_):
-    """Get all users"""
     query = User.query
 
     filters = {
@@ -21,48 +21,38 @@ def get_users(_):
     }
 
     query = apply_filters(query, User, filters, search_logic='AND')
-
-    query = apply_sorting(
-        query,
-        User, 
-        sortable_fields=['name', 'email', 'created_at', 'updated_at'],
-        default_sort='-created_at'
-    )
-
+    query = apply_sorting(query, User, sortable_fields=['name', 'email', 'created_at', 'updated_at'], default_sort='-created_at')
     result = paginate_query(query, default_per_page=10)
 
-    return jsonify({
-        'users': [user.to_dict() for user in result['items']],
-        'total': result['total'],
-        'page': result['page'],
-        'per_page': result['per_page'],
-        'pages': result['pages']
-    }), 200
-
+    return format_paginated('users', result)
 
 
 @admin_bp.route('/users', methods=['POST'])
 @jwt_required()
 @admin_required
-def create_user(_):
-    """Create new user"""   
+def create_user(current_admin):
+    if not current_admin.has_permission('users', 'create'):
+        return jsonify({'message': 'Permission denied'}), 403
+
     data = request.get_json()
-    
-    if not data or not data.get('name') or not data.get('email') or not data.get('password'):
-        return jsonify({'message': 'Name, email and password are required'}), 400
 
-    if User.query.filter_by(name=data['name']).first():
-        return jsonify({'message': 'Name already taken'}), 400
+    err = validate_required(data, ['name', 'email', 'password'])
+    if err: return err
 
-    if User.query.filter_by(email=data['email']).first():
-        return jsonify({'message': 'Email already exists'}), 400
+    err = check_unique(User, 'name', data['name'])
+    if err: return err
+
+    err = check_unique(User, 'email', data['email'])
+    if err: return err
+
+    err = validate_password(data['password'])
+    if err: return err
 
     new_user = User(name=data['name'], email=data['email'])
     new_user.set_password(data['password'])
-    
     db.session.add(new_user)
     db.session.commit()
-    
+
     return jsonify(new_user.to_dict()), 201
 
 
@@ -70,37 +60,38 @@ def create_user(_):
 @jwt_required()
 @admin_required
 def get_user(_, user_id):
-    """Get user by public_id"""
-    user = User.query.filter_by(public_id=user_id).first()
-    if not user:
-        return jsonify({'message': 'User not found'}), 404
+    user, err = get_or_404(User, user_id)
+    if err: return err
     return jsonify(user.to_dict()), 200
 
 
 @admin_bp.route('/users/<user_id>', methods=['PUT'])
 @jwt_required()
 @admin_required
-def update_user(_, user_id):
-    """Update user"""
-    user = User.query.filter_by(public_id=user_id).first()
-    if not user:
-        return jsonify({'message': 'User not found'}), 404
+def update_user(current_admin, user_id):
+    if not current_admin.has_permission('users', 'edit'):
+        return jsonify({'message': 'Permission denied'}), 403
+
+    user, err = get_or_404(User, user_id)
+    if err: return err
 
     data = request.get_json()
 
     if data.get('name'):
-        if User.query.filter(User.name == data['name'], User.id != user.id).first():
-            return jsonify({'message': 'Name already taken'}), 400
+        err = check_unique(User, 'name', data['name'], exclude_id=user.id)
+        if err: return err
         user.name = data['name']
 
     if data.get('email'):
-        if User.query.filter(User.email == data['email'], User.id != user.id).first():
-            return jsonify({'message': 'Email already exists in users'}), 400
-        if Admin.query.filter_by(email=data['email']).first():
-            return jsonify({'message': 'Email already exists in admins'}), 400
+        err = check_unique(User, 'email', data['email'], exclude_id=user.id)
+        if err: return err
+        err = check_unique(Admin, 'email', data['email'])
+        if err: return err
         user.email = data['email']
 
     if data.get('password'):
+        err = validate_password(data['password'])
+        if err: return err
         user.set_password(data['password'])
 
     db.session.commit()
@@ -110,11 +101,12 @@ def update_user(_, user_id):
 @admin_bp.route('/users/<user_id>', methods=['DELETE'])
 @jwt_required()
 @admin_required
-def delete_user(_, user_id):
-    """Delete user"""
-    user = User.query.filter_by(public_id=user_id).first()
-    if not user:
-        return jsonify({'message': 'User not found'}), 404
+def delete_user(current_admin, user_id):
+    if not current_admin.has_permission('users', 'delete'):
+        return jsonify({'message': 'Permission denied'}), 403
+
+    user, err = get_or_404(User, user_id)
+    if err: return err
 
     db.session.delete(user)
     db.session.commit()

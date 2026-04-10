@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
-import '../exceptions/api_exceptions.dart';
+import '../helpers/error_handler.dart';
+import '../widgets/password_text_field.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -16,9 +17,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _newPasswordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
   bool _isLoading = false;
-  bool _obscureOldPassword = true;
-  bool _obscureNewPassword = true;
-  bool _obscureConfirmPassword = true;
 
   @override
   void dispose() {
@@ -46,53 +44,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
             backgroundColor: Colors.green,
           ),
         );
-
         _oldPasswordController.clear();
         _newPasswordController.clear();
         _confirmPasswordController.clear();
       }
-    } on RefreshTokenExpiredException catch (e) {
-      if (mounted) {
-        await context.read<AuthProvider>().logout();
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
-    } on SessionExpiredException catch (e) {
-      if (mounted) {
-        await context.read<AuthProvider>().logout();
-        Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('An unexpected error occurred'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      if (mounted) await handleAuthException(context, e);
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -101,9 +60,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = context.watch<AuthProvider>().user;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-      ),
+      appBar: AppBar(title: const Text('Profile')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -120,13 +77,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       children: [
                         Icon(Icons.person, color: Colors.blue.shade400),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Account Information',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        const Text('Account Information',
+                            style: TextStyle(
+                                fontSize: 20, fontWeight: FontWeight.bold)),
                       ],
                     ),
                     const Divider(height: 32),
@@ -160,34 +113,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         children: [
                           Icon(Icons.lock, color: Colors.blue.shade400),
                           const SizedBox(width: 8),
-                          const Text(
-                            'Change Password',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          const Text('Change Password',
+                              style: TextStyle(
+                                  fontSize: 20, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const Divider(height: 32),
-                      TextFormField(
+                      PasswordTextField(
                         controller: _oldPasswordController,
-                        decoration: InputDecoration(
-                          labelText: 'Current Password',
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureOldPassword
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                            ),
-                            onPressed: () {
-                              setState(
-                                  () => _obscureOldPassword = !_obscureOldPassword);
-                            },
-                          ),
-                        ),
-                        obscureText: _obscureOldPassword,
+                        labelText: 'Current Password',
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Please enter current password';
@@ -196,24 +130,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         },
                       ),
                       const SizedBox(height: 16),
-                      TextFormField(
+                      PasswordTextField(
                         controller: _newPasswordController,
-                        decoration: InputDecoration(
-                          labelText: 'New Password',
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureNewPassword
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                            ),
-                            onPressed: () {
-                              setState(
-                                  () => _obscureNewPassword = !_obscureNewPassword);
-                            },
-                          ),
-                        ),
-                        obscureText: _obscureNewPassword,
+                        labelText: 'New Password',
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Please enter new password';
@@ -228,24 +147,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         },
                       ),
                       const SizedBox(height: 16),
-                      TextFormField(
+                      PasswordTextField(
                         controller: _confirmPasswordController,
-                        decoration: InputDecoration(
-                          labelText: 'Confirm New Password',
-                          border: const OutlineInputBorder(),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureConfirmPassword
-                                  ? Icons.visibility_off
-                                  : Icons.visibility,
-                            ),
-                            onPressed: () {
-                              setState(() =>
-                                  _obscureConfirmPassword = !_obscureConfirmPassword);
-                            },
-                          ),
-                        ),
-                        obscureText: _obscureConfirmPassword,
+                        labelText: 'Confirm New Password',
                         validator: (value) {
                           if (value != _newPasswordController.text) {
                             return 'Passwords do not match';
@@ -264,9 +168,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   height: 20,
                                   width: 20,
                                   child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
+                                      strokeWidth: 2, color: Colors.white),
                                 )
                               : const Text('Change Password'),
                         ),

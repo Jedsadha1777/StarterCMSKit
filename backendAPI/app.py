@@ -38,15 +38,15 @@ def create_app():
     
     
     # Configuration
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'mysql+pymysql://root:root@localhost:8889/cms')
+    db_url = os.getenv('DATABASE_URL')
+    if not db_url:
+        raise RuntimeError('DATABASE_URL must be set in environment variables')
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     secret_key = os.getenv('SECRET_KEY')
     jwt_secret = os.getenv('JWT_SECRET_KEY')
     if not secret_key or not jwt_secret:
-        if not app.debug:
-            raise RuntimeError('SECRET_KEY and JWT_SECRET_KEY must be set in environment variables')
-        secret_key = secret_key or 'dev-secret-key-UNSAFE'
-        jwt_secret = jwt_secret or 'jwt-secret-key-UNSAFE'
+        raise RuntimeError('SECRET_KEY and JWT_SECRET_KEY must be set in environment variables')
 
     app.config['SECRET_KEY'] = secret_key
 

@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import { useSiteSettings } from './useSiteSettings'
 
 export function useDataTable(loadFn) {
@@ -11,6 +11,8 @@ export function useDataTable(loadFn) {
   const sortBy = ref('created_at')
   const sortDir = ref('desc')
   let searchTimeout = null
+
+  onBeforeUnmount(() => { clearTimeout(searchTimeout) })
 
   const toggleSort = (field) => {
     if (sortBy.value === field) sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'

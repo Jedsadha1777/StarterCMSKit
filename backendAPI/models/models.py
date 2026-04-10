@@ -32,4 +32,3 @@ class TokenBlacklist(db.Model):
             expires_at=expires_at
         )
         db.session.add(blacklist_token)
-        db.session.commit()

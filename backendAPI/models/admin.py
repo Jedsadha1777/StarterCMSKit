@@ -1,7 +1,15 @@
+import enum
 from uuid import uuid4
 from extensions import db
 from passlib.hash import bcrypt
 from datetime import datetime
+
+
+class AdminRole(str, enum.Enum):
+    SUPER_ADMIN = 'super_admin'
+    ADMIN = 'admin'
+    EDITOR = 'editor'
+
 
 class Admin(db.Model):
     __tablename__ = 'admins'
@@ -11,10 +19,12 @@ class Admin(db.Model):
     name = db.Column(db.String(100), nullable=False, default='')
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.Enum(AdminRole, values_callable=lambda e: [x.value for x in e], name='admin_role'), nullable=False, default=AdminRole.ADMIN)
+    package_id = db.Column(db.Integer, db.ForeignKey('packages.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    articles = db.relationship('Article', backref='admin_author', lazy=True, cascade='all, delete-orphan')
+
+    articles = db.relationship('Article', backref='admin_author', lazy=True)
     
     def set_password(self, password):
         self.password_hash = bcrypt.hash(password)
@@ -22,11 +32,71 @@ class Admin(db.Model):
     def check_password(self, password):
         return bcrypt.verify(password, self.password_hash)
     
-    def to_dict(self):
-        return {
+    @property
+    def is_super_admin(self):
+        return self.role == AdminRole.SUPER_ADMIN
+
+    def has_permission(self, resource, action):
+        if self.is_super_admin:
+            return True
+        if not self.package_id:
+            return False
+        from models.package import PackageRolePermission
+        return PackageRolePermission.query.filter_by(
+            package_id=self.package_id,
+            role=self.role,
+            resource=resource,
+            action=action
+        ).first() is not None
+
+    def check_limit(self, resource, current_count):
+        if self.is_super_admin:
+            return True
+        if not self.package_id:
+            return False
+        from models.package import PackageLimit
+        limit = PackageLimit.query.filter_by(
+            package_id=self.package_id,
+            resource=resource
+        ).first()
+        if not limit:
+            return True
+        if limit.max_value == -1:
+            return True
+        return current_count < limit.max_value
+
+    def get_permissions(self):
+        if self.is_super_admin:
+            return '*'
+        if not self.package_id:
+            return []
+        from models.package import PackageRolePermission
+        rows = PackageRolePermission.query.filter_by(
+            package_id=self.package_id,
+            role=self.role
+        ).all()
+        return [f"{r.resource}.{r.action}" for r in rows]
+
+    def get_limits(self):
+        if self.is_super_admin:
+            return {}
+        if not self.package_id:
+            return {}
+        from models.package import PackageLimit
+        rows = PackageLimit.query.filter_by(package_id=self.package_id).all()
+        return {r.resource: r.max_value for r in rows}
+
+    def to_dict(self, include_permissions=False):
+        result = {
             'id': self.public_id,
             'name': self.name,
             'email': self.email,
+            'role': self.role.value if self.role else None,
+            'package_id': self.package_id,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+        if include_permissions:
+            result['permissions'] = self.get_permissions()
+            result['limits'] = self.get_limits()
+        return result

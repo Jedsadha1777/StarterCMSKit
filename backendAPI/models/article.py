@@ -9,7 +9,7 @@ class Article(db.Model):
     public_id = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid4()))
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    admin_id = db.Column(db.Integer, db.ForeignKey('admins.id'), nullable=False)
+    admin_id = db.Column(db.Integer, db.ForeignKey('admins.id', ondelete='SET NULL'), nullable=True, index=True)
     status = db.Column(db.String(20), nullable=False, default='draft')
     publish_date = db.Column(db.DateTime, nullable=True)
     version = db.Column(db.Integer, nullable=False, default=1)

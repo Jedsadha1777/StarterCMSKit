@@ -25,16 +25,16 @@ class Article {
 
   factory Article.fromJson(Map<String, dynamic> json) {
     return Article(
-      id: json['id'].toString(),
-      title: json['title'],
-      content: json['content'],
+      id: json['id']?.toString() ?? '',
+      title: json['title'] ?? '',
+      content: json['content'] ?? '',
       authorId: json['author_id'],
       authorEmail: json['author_email'],
       status: json['status'] ?? 'draft',
       publishDate: json['publish_date'],
       version: json['version'] ?? 1,
-      createdAt: json['created_at'],
-      updatedAt: json['updated_at'],
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
     );
   }
 }

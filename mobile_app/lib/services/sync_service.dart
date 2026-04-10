@@ -29,10 +29,14 @@ class SyncService {
     }
   }
 
+  static const int _maxPages = 50;
+
   Future<bool> _fetchPages(String? since) async {
     String? cursor = since;
+    int pageCount = 0;
 
-    while (true) {
+    while (pageCount < _maxPages) {
+      pageCount++;
       // ApiClient.get() handles token refresh + retry automatically
       final syncData = await _client.get<Map<String, dynamic>>(
         '/sync',
@@ -64,6 +68,7 @@ class SyncService {
         return true;
       }
     }
+    return false;
   }
 
   Future<void> fullSync() async {

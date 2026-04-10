@@ -45,7 +45,7 @@ class AuthApi {
         errorMessage: 'Logout failed',
       );
     } catch (e) {
-      print('Logout error: $e');
+      // logout error ignored — tokens cleared regardless
     } finally {
       await _tokenManager.clearTokens();
       _client.clearState();

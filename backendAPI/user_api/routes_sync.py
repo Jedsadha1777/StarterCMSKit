@@ -36,6 +36,7 @@ def sync(_):
 
     articles = Article.query \
         .filter(Article.updated_at > since) \
+        .filter((Article.status == 'published') | (Article.is_deleted == True)) \
         .order_by(Article.updated_at.asc()) \
         .limit(SYNC_PAGE_SIZE + 1) \
         .all()

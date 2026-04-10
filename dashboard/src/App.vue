@@ -59,6 +59,7 @@
           <v-divider class="my-1" style="width: 100%;" />
 
           <v-list-item
+            v-if="hasPermission('settings', 'view')"
             to="/settings"
             :active="$route.path === '/settings'"
             color="primary"
@@ -95,9 +96,10 @@ import axios from 'axios'
 import SessionReplacedModal from './components/SessionReplacedModal.vue'
 import { useTheme } from 'vuetify'
 import { useSiteSettings } from './composables/useSiteSettings'
+import { useAdmin } from './composables/useAdmin'
+import api from './api'
+import { API_BASE_URL } from './config'
 import defaultLogoImg from '@/assets/logo.png'
-
-const API_BASE_URL = 'http://127.0.0.1:5000/admin-api'
 const SSE_RECONNECT_DELAY = 3000
 const SSE_MAX_RETRIES = 10
 
@@ -113,37 +115,32 @@ export default {
     const siteTitle = computed(() => settings.site_title || 'Admin Panel')
     const siteLogoUrl = computed(() => logoUrl())
 
-    const adminName = ref('')
-    const adminEmail = ref('admin')
+    const { admin, can: hasPermission, sync: syncAdminInfo } = useAdmin()
+    const adminName = computed(() => admin.name || '')
+    const adminEmail = computed(() => admin.email || 'admin')
 
-    const refreshAdminInfo = () => {
-      try {
-        const data = JSON.parse(localStorage.getItem('admin') || '{}')
-        adminName.value = data.name || ''
-        adminEmail.value = data.email || 'admin'
-      } catch { /* ignore */ }
-    }
-    refreshAdminInfo()
-
-    // Listen for localStorage changes (from other components on same tab)
-    window.addEventListener('storage-updated', refreshAdminInfo)
-    onBeforeUnmount(() => window.removeEventListener('storage-updated', refreshAdminInfo))
-
-    const navItems = [
+    const allNavItems = [
       { to: '/',          icon: 'mdi-view-dashboard',  title: 'Dashboard',  match: '/' },
-      { to: '/articles',  icon: 'mdi-newspaper',       title: 'Articles',   match: '/articles' },
-      { to: '/users',     icon: 'mdi-account-group',   title: 'Users',      match: '/users' },
-      { to: '/admins',    icon: 'mdi-shield-account',  title: 'Admins',     match: '/admins' },
+      { to: '/articles',  icon: 'mdi-newspaper',       title: 'Articles',   match: '/articles',  requires: 'articles.view' },
+      { to: '/users',     icon: 'mdi-account-group',   title: 'Users',      match: '/users',     requires: 'users.view' },
+      { to: '/admins',    icon: 'mdi-shield-account',  title: 'Admins',     match: '/admins',    requires: 'admins.view' },
     ]
+
+    const navItems = computed(() =>
+      allNavItems.filter(item => {
+        if (!item.requires) return true
+        const [resource, action] = item.requires.split('.')
+        return hasPermission(resource, action)
+      })
+    )
 
     const isActive = (item) => {
       if (item.match === '/') return route.path === '/'
       return route.path.startsWith(item.match)
     }
 
-    const doLogout = () => {
-      localStorage.clear()
-      router.push('/login')
+    const doLogout = async () => {
+      await api.logout()
     }
 
     // ---- SSE ----
@@ -173,10 +170,11 @@ export default {
           disconnectSSE()
         })
         eventSource.addEventListener('security_alert', () => {
-          disconnectSSE(); localStorage.clear(); window.location.href = '/login'
+          disconnectSSE(); localStorage.clear(); router.push('/login')
         })
-        eventSource.onerror = () => { disconnectSSE(); scheduleReconnect() }
-      } catch { scheduleReconnect() }
+        eventSource.onopen = () => { stopPolling() }
+        eventSource.onerror = () => { disconnectSSE(); startPolling(); scheduleReconnect() }
+      } catch { startPolling(); scheduleReconnect() }
     }
     const scheduleReconnect = () => {
       if (retryCount >= SSE_MAX_RETRIES || reconnectTimer) return
@@ -221,7 +219,7 @@ export default {
     }
 
     watch(isAuthenticated, (v) => {
-      if (v) { connectSSE(); startPolling(); loadSettings() }
+      if (v) { connectSSE(); loadSettings(); syncAdminInfo() }
       else { disconnectSSE(); stopPolling() }
     }, { immediate: true })
 
@@ -231,7 +229,7 @@ export default {
     })
     onBeforeUnmount(() => { disconnectSSE(); stopPolling() })
 
-    return { isAuthenticated, siteTitle, siteLogoUrl, defaultLogo, adminName, adminEmail, navItems, isActive, doLogout, sessionReplaced }
+    return { isAuthenticated, siteTitle, siteLogoUrl, defaultLogo, adminName, adminEmail, navItems, isActive, doLogout, sessionReplaced, hasPermission }
   }
 }
 </script>

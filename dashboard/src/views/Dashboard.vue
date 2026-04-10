@@ -60,12 +60,13 @@
 import { ref, onMounted } from 'vue'
 import api from '../api'
 import PageBanner from '../components/PageBanner.vue'
+import { useAdmin } from '../composables/useAdmin'
 
 export default {
   components: { PageBanner },
   setup() {
     const stats = ref({ articles: 0, users: 0 })
-    const adminInfo = ref(JSON.parse(localStorage.getItem('admin') || '{}'))
+    const { admin: adminInfo } = useAdmin()
 
     onMounted(async () => {
       try {
