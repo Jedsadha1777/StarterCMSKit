@@ -1,10 +1,18 @@
+import os
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_jwt_extended import JWTManager
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 db = SQLAlchemy()
 migrate = Migrate()
 jwt = JWTManager()
+# Use Redis in production (set REDIS_URL env); fallback to in-memory for single-process dev.
+limiter = Limiter(
+    key_func=get_remote_address,
+    storage_uri=os.getenv('REDIS_URL', 'memory://'),
+)
 
 
 @jwt.token_in_blocklist_loader

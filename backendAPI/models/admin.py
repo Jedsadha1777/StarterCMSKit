@@ -1,8 +1,11 @@
 import enum
 from uuid import uuid4
 from extensions import db
-from passlib.hash import bcrypt
-from datetime import datetime
+from datetime import datetime, timezone
+from models.mixins import PasswordMixin
+
+
+UNLIMITED = -1  # sentinel for PackageLimit.max_value — means no upper bound
 
 
 class AdminRole(str, enum.Enum):
@@ -11,7 +14,7 @@ class AdminRole(str, enum.Enum):
     EDITOR = 'editor'
 
 
-class Admin(db.Model):
+class Admin(PasswordMixin, db.Model):
     __tablename__ = 'admins'
 
     id = db.Column(db.Integer, primary_key=True)
@@ -21,17 +24,11 @@ class Admin(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.Enum(AdminRole, values_callable=lambda e: [x.value for x in e], name='admin_role'), nullable=False, default=AdminRole.ADMIN)
     package_id = db.Column(db.Integer, db.ForeignKey('packages.id'), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     articles = db.relationship('Article', backref='admin_author', lazy=True)
-    
-    def set_password(self, password):
-        self.password_hash = bcrypt.hash(password)
-    
-    def check_password(self, password):
-        return bcrypt.verify(password, self.password_hash)
-    
+
     @property
     def is_super_admin(self):
         return self.role == AdminRole.SUPER_ADMIN
@@ -61,7 +58,7 @@ class Admin(db.Model):
         ).first()
         if not limit:
             return True
-        if limit.max_value == -1:
+        if limit.max_value == UNLIMITED:
             return True
         return current_count < limit.max_value
 

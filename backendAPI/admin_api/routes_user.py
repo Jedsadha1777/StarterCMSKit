@@ -11,7 +11,7 @@ from datetime import datetime
 @admin_bp.route('/users', methods=['GET'])
 @jwt_required()
 @admin_required
-def get_users(_):
+def get_users(admin):
     query = User.query
 
     filters = {
@@ -59,7 +59,7 @@ def create_user(current_admin):
 @admin_bp.route('/users/<user_id>', methods=['GET'])
 @jwt_required()
 @admin_required
-def get_user(_, user_id):
+def get_user(admin, user_id):
     user, err = get_or_404(User, user_id)
     if err: return err
     return jsonify(user.to_dict()), 200

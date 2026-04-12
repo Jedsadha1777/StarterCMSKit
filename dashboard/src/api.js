@@ -2,6 +2,25 @@ import axios from 'axios'
 import router from './router'
 import { API_BASE_URL } from './config'
 
+// D15: access_token อยู่ใน sessionStorage (ล้างเมื่อปิด tab) เพื่อลดความเสี่ยง XSS
+// refresh_token อยู่ใน localStorage เพื่อให้ session คงอยู่ข้ามการเปิด tab ใหม่
+const getAccessToken = () => sessionStorage.getItem('access_token')
+const setAccessToken = (t) => sessionStorage.setItem('access_token', t)
+const getRefreshToken = () => localStorage.getItem('refresh_token')
+const setRefreshToken = (t) => localStorage.setItem('refresh_token', t)
+
+// D16: ล้างเฉพาะ key ที่เป็น auth เพื่อไม่ให้กระทบ localStorage ของ third-party
+// ยิง 'auth-changed' ทุกครั้งที่ล้าง เพื่อให้ App.vue อัปเดต isAuthenticated ทันที
+export function clearAuthStorage() {
+  sessionStorage.removeItem('access_token')
+  localStorage.removeItem('refresh_token')
+  localStorage.removeItem('admin')
+  window.dispatchEvent(new Event('auth-changed'))
+}
+
+// D27: จำกัดขนาด queue เพื่อป้องกัน unbounded growth ระหว่างรอ refresh
+const MAX_QUEUE_SIZE = 50
+
 let isRefreshing = false
 let failedQueue = []
 
@@ -24,7 +43,7 @@ const api = axios.create({
 
 api.interceptors.request.use(
   config => {
-    const token = localStorage.getItem('access_token')
+    const token = getAccessToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -60,8 +79,8 @@ api.interceptors.response.use(
         isRefreshing = false
         processQueue(error, null)
         setTimeout(() => {
-          if (localStorage.getItem('access_token')) {
-            localStorage.clear()
+          if (getAccessToken()) {
+            clearAuthStorage()
             router.push('/login')
           }
         }, 2000)
@@ -70,12 +89,15 @@ api.interceptors.response.use(
 
       if (originalRequest.url.includes('/refresh')) {
         isRefreshing = false
-        localStorage.clear()
+        clearAuthStorage()
         router.push('/login')
         return Promise.reject(error)
       }
 
       if (isRefreshing) {
+        if (failedQueue.length >= MAX_QUEUE_SIZE) {
+          return Promise.reject(new Error('Request queue is full, please try again'))
+        }
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject })
         })
@@ -89,11 +111,11 @@ api.interceptors.response.use(
       originalRequest._retry = true
       isRefreshing = true
 
-      const refreshToken = localStorage.getItem('refresh_token')
+      const refreshToken = getRefreshToken()
 
       if (!refreshToken) {
         isRefreshing = false
-        localStorage.clear()
+        clearAuthStorage()
         router.push('/login')
         return Promise.reject(error)
       }
@@ -105,14 +127,14 @@ api.interceptors.response.use(
           withCredentials: true
         })
 
-        const expiredAccessToken = localStorage.getItem('access_token')
+        const expiredAccessToken = getAccessToken()
         const { data } = await refreshApi.post('/refresh', { refresh_token: refreshToken }, {
           headers: { Authorization: `Bearer ${expiredAccessToken}` }
         })
 
-        localStorage.setItem('access_token', data.access_token)
+        setAccessToken(data.access_token)
         if (data.refresh_token) {
-          localStorage.setItem('refresh_token', data.refresh_token)
+          setRefreshToken(data.refresh_token)
         }
 
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`
@@ -123,7 +145,7 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null)
         isRefreshing = false
-        localStorage.clear()
+        clearAuthStorage()
         router.push('/login')
         return Promise.reject(refreshError)
       }
@@ -140,7 +162,7 @@ export default {
 
   logout() {
     return api.post('/logout').finally(() => {
-      localStorage.clear()
+      clearAuthStorage()
       router.push('/login')
     })
   },
@@ -226,6 +248,26 @@ export default {
 
   deleteAdmin(id) {
     return api.delete(`/admins/${id}`)
+  },
+
+  getCustomers(params = {}) {
+    return api.get('/customers', { params })
+  },
+
+  getCustomer(id) {
+    return api.get(`/customers/${id}`)
+  },
+
+  createCustomer(data) {
+    return api.post('/customers', data)
+  },
+
+  updateCustomer(id, data) {
+    return api.put(`/customers/${id}`, data)
+  },
+
+  deleteCustomer(id) {
+    return api.delete(`/customers/${id}`)
   },
 
   getSettings() {

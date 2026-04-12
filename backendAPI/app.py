@@ -1,13 +1,12 @@
 import os
-import click
-from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import timedelta
 from flask import Flask
 from flask_cors import CORS
 from dotenv import load_dotenv
-from extensions import db, migrate, jwt
+from extensions import db, migrate, jwt, limiter
 from admin_api import admin_bp
 from user_api import user_bp
+from commands import register_commands
 
 # Load environment variables
 load_dotenv()
@@ -17,8 +16,8 @@ def create_app():
 
     # CORS Configuration
     allowed_origins = [origin.strip() for origin in os.getenv('ALLOWED_ORIGINS', 'http://localhost:5000').split(',') if origin.strip()]
-    
-    CORS(app, 
+
+    CORS(app,
          resources={
              r"/admin-api/*": {
                  "origins": allowed_origins,
@@ -43,6 +42,7 @@ def create_app():
         raise RuntimeError('DATABASE_URL must be set in environment variables')
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB upload limit
     secret_key = os.getenv('SECRET_KEY')
     jwt_secret = os.getenv('JWT_SECRET_KEY')
     if not secret_key or not jwt_secret:
@@ -59,13 +59,14 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)
+    limiter.init_app(app)
     
     # Register blueprints
     app.register_blueprint(admin_bp)
     app.register_blueprint(user_bp)
     
     # Import models to ensure they are registered with SQLAlchemy
-    from models import Admin, User, Article, TokenBlacklist, Summary, AdminSession, Setting
+    from models import Admin, User, Article, TokenBlacklist, Summary, AdminSession, Setting, Customer
     
     @app.route('/')
     def index():
@@ -80,70 +81,15 @@ def create_app():
     
     @app.after_request
     def set_security_headers(response):
-       response.headers['X-Content-Type-Options'] = 'nosniff'
-       response.headers['X-Frame-Options'] = 'DENY'
-       response.headers['X-XSS-Protection'] = '1; mode=block'
-       return response
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['X-XSS-Protection'] = '1; mode=block'
+        response.headers['Content-Security-Policy'] = "default-src 'self'"
+        response.headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        return response
 
-    @app.cli.command('seed')
-    @click.option('--name', default='Admin', help='Admin name')
-    @click.option('--email', default='admin@admin.com', help='Admin email')
-    @click.option('--password', default='admin', help='Admin password')
-    def seed(name, email, password):
-        """Create initial admin user."""
-        from models import Admin
-        if Admin.query.filter_by(email=email).first():
-            click.echo(f'Admin "{email}" already exists, skipping.')
-            return
-        admin = Admin(name=name, email=email)
-        admin.set_password(password)
-        db.session.add(admin)
-        db.session.commit()
-        click.echo(f'Admin created — name: {name}, email: {email}')
-
-    @app.cli.command('backfill')
-    def backfill():
-        """Backfill public_id (UUID v4) for existing rows that have NULL."""
-        from models import Admin, User, Article
-        count = 0
-        for model in [Admin, User, Article]:
-            rows = model.query.filter(
-                (model.public_id == None) | (model.public_id == '')
-            ).all()
-            for row in rows:
-                row.public_id = str(uuid4())
-                count += 1
-            click.echo(f'{model.__tablename__}: {len(rows)} rows backfilled')
-        db.session.commit()
-        click.echo(f'Done — {count} total rows updated')
-
-    @app.cli.command('cleanup')
-    def cleanup():
-        """Clean up expired sessions and blacklist entries."""
-        cutoff = datetime.utcnow() - timedelta(days=7)
-
-        # Revoked admin sessions > 7 days
-        count = AdminSession.query.filter(
-            AdminSession.status == 'revoked',
-            AdminSession.created_at < cutoff
-        ).delete()
-        click.echo(f'Deleted {count} revoked admin sessions')
-
-        # Expired grace period → revoke
-        updated = AdminSession.query.filter(
-            AdminSession.status == 'grace_period',
-            AdminSession.grace_until < datetime.utcnow()
-        ).update({'status': 'revoked'})
-        click.echo(f'Revoked {updated} expired grace sessions')
-
-        # Expired blacklist entries > 7 days
-        bl_count = TokenBlacklist.query.filter(
-            TokenBlacklist.expires_at < cutoff
-        ).delete()
-        click.echo(f'Deleted {bl_count} expired blacklist entries')
-
-        db.session.commit()
-        click.echo('Cleanup complete')
+    register_commands(app)
 
     return app
 

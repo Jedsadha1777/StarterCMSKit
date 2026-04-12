@@ -108,7 +108,16 @@ export default {
   setup() {
     const route = useRoute()
     const router = useRouter()
-    const isAuthenticated = computed(() => route.meta.requiresAuth)
+    // isAuthenticated เป็น ref (ไม่ใช่ computed) เพราะ sessionStorage/localStorage
+    // ไม่ใช่ reactive data — Vue ไม่ track การเปลี่ยนแปลงของมัน
+    // syncAuthState() ถูกเรียกเมื่อ auth เปลี่ยน (login/logout/token clear)
+    const isAuthenticated = ref(
+      !!(sessionStorage.getItem('access_token') && localStorage.getItem('refresh_token'))
+    )
+    const syncAuthState = () => {
+      isAuthenticated.value = !!(sessionStorage.getItem('access_token') && localStorage.getItem('refresh_token'))
+    }
+    window.addEventListener('auth-changed', syncAuthState)
     const { settings, loadSettings, logoUrl, setThemeRef } = useSiteSettings()
     setThemeRef(useTheme())
     const defaultLogo = defaultLogoImg
@@ -124,6 +133,7 @@ export default {
       { to: '/articles',  icon: 'mdi-newspaper',       title: 'Articles',   match: '/articles',  requires: 'articles.view' },
       { to: '/users',     icon: 'mdi-account-group',   title: 'Users',      match: '/users',     requires: 'users.view' },
       { to: '/admins',    icon: 'mdi-shield-account',  title: 'Admins',     match: '/admins',    requires: 'admins.view' },
+      { to: '/customers', icon: 'mdi-account-multiple', title: 'Customers',  match: '/customers', requires: 'customers.view' },
     ]
 
     const navItems = computed(() =>
@@ -148,15 +158,17 @@ export default {
     let eventSource = null
     let reconnectTimer = null
     let retryCount = 0
+    let isMounted = true  // D3: guard against creating EventSource after unmount
 
     const connectSSE = async () => {
       disconnectSSE()
-      const token = localStorage.getItem('access_token')
+      const token = sessionStorage.getItem('access_token')
       if (!token) return
       try {
         const { data } = await axios.post(`${API_BASE_URL}/session/ticket`, {}, {
           headers: { Authorization: `Bearer ${token}` }
         })
+        if (!isMounted) return  // component unmounted while awaiting ticket — do not create EventSource
         eventSource = new EventSource(`${API_BASE_URL}/session/stream?ticket=${data.ticket}`)
         retryCount = 0
         eventSource.addEventListener('session_replaced', (e) => {
@@ -170,7 +182,11 @@ export default {
           disconnectSSE()
         })
         eventSource.addEventListener('security_alert', () => {
-          disconnectSSE(); localStorage.clear(); router.push('/login')
+          disconnectSSE()
+          sessionStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          localStorage.removeItem('admin')
+          router.push('/login')
         })
         eventSource.onopen = () => { stopPolling() }
         eventSource.onerror = () => { disconnectSSE(); startPolling(); scheduleReconnect() }
@@ -181,7 +197,7 @@ export default {
       retryCount++
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null
-        if (isAuthenticated.value && localStorage.getItem('access_token')) connectSSE()
+        if (isAuthenticated.value && sessionStorage.getItem('access_token')) connectSSE()
       }, SSE_RECONNECT_DELAY)
     }
     const disconnectSSE = () => {
@@ -195,7 +211,7 @@ export default {
       stopPolling()
       pollTimer = setInterval(async () => {
         if (sessionReplaced.value.visible) return
-        const token = localStorage.getItem('access_token')
+        const token = sessionStorage.getItem('access_token')
         if (!token) return
         try {
           const { data } = await axios.get(`${API_BASE_URL}/session/check`, {
@@ -224,10 +240,17 @@ export default {
     }, { immediate: true })
 
     // Reload settings when navigating back from settings page
+    // also sync auth state on every navigation (catches login redirect)
     watch(() => route.path, (newPath, oldPath) => {
+      syncAuthState()
       if (oldPath === '/settings' && newPath !== '/settings') loadSettings()
     })
-    onBeforeUnmount(() => { disconnectSSE(); stopPolling() })
+    onBeforeUnmount(() => {
+      isMounted = false
+      disconnectSSE()
+      stopPolling()
+      window.removeEventListener('auth-changed', syncAuthState)
+    })
 
     return { isAuthenticated, siteTitle, siteLogoUrl, defaultLogo, adminName, adminEmail, navItems, isActive, doLogout, sessionReplaced, hasPermission }
   }

@@ -1,36 +1,62 @@
 import json
+import logging
 import queue
 import secrets
+import threading
 from uuid import uuid4
-from datetime import datetime, timedelta
-from flask import request, jsonify, Response
+from datetime import datetime, timedelta, timezone
+from flask import request, jsonify, Response, current_app
 from flask_jwt_extended import (
     create_access_token, jwt_required, get_jwt_identity, get_jwt,
     decode_token
 )
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+from flask_jwt_extended.exceptions import JWTDecodeError
 from admin_api import admin_bp
-from extensions import db
+from extensions import db, limiter
 from models import Admin, AdminSession
 from decorators import admin_required
 from utils import validate_required, validate_password
 from session_cache import session_cache
 from sse_manager import sse_manager
 
+logger = logging.getLogger(__name__)
+
+RESET_TOKEN_MAX_AGE = 3600  # 1 hour
+
 GRACE_SECONDS = 30
 REUSE_GRACE_SECONDS = 30
 SSE_TICKET_TTL = 30
 
 
-# In-memory store for SSE one-time tickets
+# In-memory store for SSE one-time tickets (protected by lock for thread safety)
 _sse_tickets = {}
+_sse_tickets_lock = threading.Lock()
 
 
 def _cleanup_expired_tickets():
     """Remove expired tickets to prevent memory leak."""
-    now = datetime.utcnow()
-    expired = [k for k, v in _sse_tickets.items() if now > v['expires']]
-    for k in expired:
-        del _sse_tickets[k]
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    with _sse_tickets_lock:
+        expired = [k for k, v in _sse_tickets.items() if now > v['expires']]
+        for k in expired:
+            del _sse_tickets[k]
+
+
+def _generate_reset_token(email):
+    s = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+    return s.dumps(email, salt='password-reset')
+
+
+def _verify_reset_token(token):
+    s = URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+    try:
+        email = s.loads(token, salt='password-reset', max_age=RESET_TOKEN_MAX_AGE)
+        return email, None
+    except SignatureExpired:
+        return None, 'Reset link has expired'
+    except BadSignature:
+        return None, 'Invalid reset token'
 
 
 def _create_session(admin, raw_refresh, family=None, ip=None, ua=None):
@@ -63,7 +89,7 @@ def _decode_admin_jwt(allow_expired=False):
     token = auth[7:]
     try:
         claims = decode_token(token, allow_expired=allow_expired)
-    except Exception as e:
+    except JWTDecodeError as e:
         return None, str(e)
     if claims.get('user_type') != 'admin':
         return None, 'Wrong user type'
@@ -71,16 +97,17 @@ def _decode_admin_jwt(allow_expired=False):
 
 
 @admin_bp.route('/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login():
     """Admin login — single session enforcement with grace period."""
-    data = request.get_json()
+    data = request.get_json(silent=True)
 
     err = validate_required(data, ['email', 'password'])
     if err: return err
 
     admin = Admin.query.filter_by(email=data['email']).first()
     if not admin or not admin.check_password(data['password']):
-        return jsonify({'message': 'Invalid email or password'}), 401
+        return jsonify({'code': 'INVALID_CREDENTIALS', 'message': 'Invalid email or password'}), 401
 
     ip = request.remote_addr
     ua = request.headers.get('User-Agent', '')[:255]
@@ -94,7 +121,7 @@ def login():
     replaced_info = None
     for old in old_sessions:
         old.status = 'grace_period'
-        old.grace_until = datetime.utcnow() + timedelta(seconds=GRACE_SECONDS)
+        old.grace_until = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=GRACE_SECONDS)
         replaced_info = {
             'old_session_id': old.id,
             'ip_address': old.ip_address,
@@ -118,9 +145,10 @@ def login():
     expired = AdminSession.query.filter(
         AdminSession.admin_id == admin.id,
         AdminSession.status == 'grace_period',
-        AdminSession.grace_until < datetime.utcnow(),
-        ~AdminSession.id.in_(old_ids) if old_ids else True
+        AdminSession.grace_until < datetime.now(timezone.utc).replace(tzinfo=None),
     )
+    if old_ids:
+        expired = expired.filter(~AdminSession.id.in_(old_ids))
     expired.update({'status': 'revoked'})
 
     db.session.commit()
@@ -132,7 +160,7 @@ def login():
             'replaced_by': {
                 'session_id': new_session.id,
                 'ip_address': ip,
-                'at': datetime.utcnow().isoformat(),
+                'at': datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
             },
             'grace_seconds': GRACE_SECONDS,
         })
@@ -186,7 +214,7 @@ def refresh():
 
     # Reuse detection
     if session.is_used:
-        elapsed = (datetime.utcnow() - session.used_at).total_seconds() if session.used_at else 9999
+        elapsed = (datetime.now(timezone.utc).replace(tzinfo=None) - session.used_at).total_seconds() if session.used_at else float('inf')
 
         if elapsed <= REUSE_GRACE_SECONDS:
             # Network retry — find latest unused session in this family and generate new refresh token for it
@@ -223,7 +251,7 @@ def refresh():
 
     # Normal rotation
     session.is_used = True
-    session.used_at = datetime.utcnow()
+    session.used_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.status = 'revoked'
     session_cache.invalidate(session.id)
 
@@ -264,11 +292,55 @@ def logout(admin):
 
 
 @admin_bp.route('/forgot-password', methods=['POST'])
+@limiter.limit("3 per minute")
 def forgot_password():
-    data = request.get_json()
+    data = request.get_json(silent=True)
     if not data or not data.get('email'):
         return jsonify({'message': 'Email is required'}), 400
+
+    admin = Admin.query.filter_by(email=data['email']).first()
+    if admin:
+        token = _generate_reset_token(admin.email)
+        # TODO: replace with actual email delivery once mail service is configured
+        # WARNING: do NOT log the token — it is a credential that grants password reset access
+        logger.info('Password reset initiated for %s', admin.email)
+
+    # Always return 200 — do not reveal whether the email exists
     return jsonify({'message': 'If this email exists, a reset link will be sent'}), 200
+
+
+@admin_bp.route('/reset-password', methods=['POST'])
+@limiter.limit("5 per minute")
+def reset_password():
+    data = request.get_json(silent=True)
+    if not data or not data.get('token') or not data.get('new_password'):
+        return jsonify({'message': 'token and new_password are required'}), 400
+
+    email, err = _verify_reset_token(data['token'])
+    if err:
+        return jsonify({'code': 'INVALID_TOKEN', 'message': err}), 400
+
+    admin = Admin.query.filter_by(email=email).first()
+    if not admin:
+        return jsonify({'code': 'INVALID_TOKEN', 'message': 'Invalid token'}), 400
+
+    err = validate_password(data['new_password'])
+    if err:
+        return err
+
+    admin.set_password(data['new_password'])
+
+    # Revoke all active sessions after password reset
+    active_sessions = AdminSession.query.filter(
+        AdminSession.admin_id == admin.id,
+        AdminSession.status.in_(['active', 'grace_period'])
+    ).all()
+    for s in active_sessions:
+        s.status = 'revoked'
+        session_cache.invalidate(s.id)
+
+    db.session.commit()
+    return jsonify({'message': 'Password reset successfully. Please login again.'}), 200
 
 
 @admin_bp.route('/session/ticket', methods=['POST'])
@@ -283,11 +355,12 @@ def create_sse_ticket(admin):
     session_id = claims.get('session_id')
 
     ticket = secrets.token_urlsafe(32)
-    _sse_tickets[ticket] = {
-        'session_id': session_id,
-        'admin_id': admin.id,
-        'expires': datetime.utcnow() + timedelta(seconds=SSE_TICKET_TTL),
-    }
+    with _sse_tickets_lock:
+        _sse_tickets[ticket] = {
+            'session_id': session_id,
+            'admin_id': admin.id,
+            'expires': datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(seconds=SSE_TICKET_TTL),
+        }
 
     return jsonify({'ticket': ticket}), 200
 
@@ -296,12 +369,12 @@ def create_sse_ticket(admin):
 def session_stream():
     """SSE endpoint — uses one-time ticket instead of raw JWT."""
     ticket_id = request.args.get('ticket')
-    if not ticket_id or ticket_id not in _sse_tickets:
-        return jsonify({'code': 'INVALID_TOKEN', 'message': 'Invalid or missing ticket'}), 401
+    with _sse_tickets_lock:
+        if not ticket_id or ticket_id not in _sse_tickets:
+            return jsonify({'code': 'INVALID_TOKEN', 'message': 'Invalid or missing ticket'}), 401
+        ticket = _sse_tickets.pop(ticket_id)
 
-    ticket = _sse_tickets.pop(ticket_id)
-
-    if datetime.utcnow() > ticket['expires']:
+    if datetime.now(timezone.utc).replace(tzinfo=None) > ticket['expires']:
         return jsonify({'code': 'INVALID_TOKEN', 'message': 'Ticket expired'}), 401
 
     session_id = ticket['session_id']

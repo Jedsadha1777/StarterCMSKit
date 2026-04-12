@@ -18,7 +18,7 @@ depends_on = None
 def upgrade():
     op.create_table('settings',
         sa.Column('key', sa.String(length=50), nullable=False),
-        sa.Column('value', sa.Text(), nullable=False, server_default=''),
+        sa.Column('value', sa.Text(), nullable=False),
         sa.PrimaryKeyConstraint('key')
     )
 

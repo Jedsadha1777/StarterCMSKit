@@ -1,5 +1,5 @@
 from extensions import db
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class Package(db.Model):
@@ -8,8 +8,8 @@ class Package(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), unique=True, nullable=False)
     description = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     limits = db.relationship('PackageLimit', backref='package', lazy=True, cascade='all, delete-orphan')
     role_permissions = db.relationship('PackageRolePermission', backref='package', lazy=True, cascade='all, delete-orphan')
@@ -32,7 +32,7 @@ class PackageLimit(db.Model):
     package_id = db.Column(db.Integer, db.ForeignKey('packages.id', ondelete='CASCADE'), primary_key=True)
     resource = db.Column(db.String(50), primary_key=True)
     max_value = db.Column(db.Integer, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     def to_dict(self):
         return {
@@ -48,7 +48,7 @@ class PackageRolePermission(db.Model):
     role = db.Column(db.Enum('super_admin', 'admin', 'editor', name='admin_role', create_type=False), primary_key=True)
     resource = db.Column(db.String(50), primary_key=True)
     action = db.Column(db.String(30), primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     def to_dict(self):
         return {

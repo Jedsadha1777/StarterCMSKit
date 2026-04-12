@@ -27,7 +27,7 @@ def upgrade():
             {'pid': str(uuid4()), 'id': row[0]}
         )
 
-    op.alter_column('articles', 'public_id', nullable=False)
+    op.alter_column('articles', 'public_id', existing_type=sa.String(length=36), nullable=False)
     op.create_index('idx_articles_public_id', 'articles', ['public_id'], unique=True)
 
 

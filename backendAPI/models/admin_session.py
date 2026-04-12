@@ -1,7 +1,7 @@
 import secrets
 import hashlib
 from extensions import db
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class AdminSession(db.Model):
@@ -18,15 +18,15 @@ class AdminSession(db.Model):
     replaced_by_session_id = db.Column(db.String(36), db.ForeignKey('admin_sessions.id'), nullable=True)
     ip_address = db.Column(db.String(45))
     user_agent = db.Column(db.String(255))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_active_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    last_active_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
     replaced_by = db.relationship('AdminSession', remote_side=[id], uselist=False)
 
     def is_valid(self):
         if self.status == 'active':
             return True
-        if self.status == 'grace_period' and self.grace_until and datetime.utcnow() <= self.grace_until:
+        if self.status == 'grace_period' and self.grace_until and datetime.now(timezone.utc).replace(tzinfo=None) <= self.grace_until:
             return True
         return False
 

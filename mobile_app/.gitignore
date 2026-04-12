@@ -44,6 +44,10 @@ app.*.map.json
 .env.local
 *.env
 
+# Local build config — copy local.json.example and fill in your LAN IP
+# Usage: flutter run --dart-define-from-file=lib/config/local.json
+lib/config/local.json
+
 # iOS specific
 **/ios/Pods/
 **/ios/.symlinks/

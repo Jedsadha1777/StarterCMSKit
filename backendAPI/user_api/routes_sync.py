@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import request, jsonify
 from flask_jwt_extended import jwt_required
 from user_api import user_bp
@@ -23,7 +23,7 @@ def _parse_since(value):
 @user_bp.route('/sync', methods=['GET'])
 @jwt_required()
 @user_required
-def sync(_):
+def sync(user):
     """Delta sync — return articles changed since `since` timestamp."""
     since_str = request.args.get('since')
     since = _parse_since(since_str)
@@ -32,11 +32,16 @@ def sync(_):
 
     # Capture server_time BEFORE query → articles created between query and response
     # will be picked up in the next sync (updated_at > server_time)
-    server_time = datetime.utcnow().isoformat()
+    server_time = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
+    # Filter logic:
+    #   published + not deleted  → upserted (client adds/updates)
+    #   published + deleted      → deleted  (client removes)
+    #   draft (any delete state) → excluded (client never knew about it)
+    # Using status == 'published' covers both cases without leaking drafts.
     articles = Article.query \
         .filter(Article.updated_at > since) \
-        .filter((Article.status == 'published') | (Article.is_deleted == True)) \
+        .filter(Article.status == 'published') \
         .order_by(Article.updated_at.asc()) \
         .limit(SYNC_PAGE_SIZE + 1) \
         .all()

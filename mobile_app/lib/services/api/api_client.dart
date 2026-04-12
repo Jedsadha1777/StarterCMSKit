@@ -367,8 +367,7 @@ class ApiClient {
         } catch (_) {}
         throw RefreshTokenExpiredException(errorMsg);
       } else {
-        await _tokenManager.clearTokens();
-
+        // Server error (5xx etc.) — ไม่ล้าง token เพราะไม่ใช่ token ผิด
         String errorMsg = 'Failed to refresh token';
         try {
           final errorData = safeJsonDecode(response.body);
@@ -387,17 +386,21 @@ class ApiClient {
         }
       } catch (_) {}
 
-      if (e is RefreshTokenExpiredException || e is SessionExpiredException) {
-        await _tokenManager.clearTokens();
+      // ล้าง token เฉพาะเมื่อ server บอกชัดเจนว่า invalid (401)
+      // ไม่ล้างเมื่อ network error หรือ timeout เพราะ user อาจแค่ offline
+      // หมายเหตุ: clearTokens() ถูกเรียกแล้วตรงจุดที่ throw RefreshTokenExpiredException
+      if (e is RefreshTokenExpiredException) {
+        rethrow;
+      }
+
+      if (e is SessionExpiredException) {
         rethrow;
       }
 
       if (e is TimeoutException) {
-        await _tokenManager.clearTokens();
         throw NetworkException('Token refresh timed out');
       }
 
-      await _tokenManager.clearTokens();
       throw NetworkException('Token refresh failed: ${extractErrorMessage(e)}');
     } finally {
       try {
@@ -406,9 +409,7 @@ class ApiClient {
         }
       } catch (_) {}
 
-      Future.delayed(const Duration(milliseconds: 100), () {
-        _refreshLock = null;
-      });
+      Future.microtask(() => _refreshLock = null);
     }
   }
 
@@ -442,7 +443,7 @@ class ApiClient {
       }
 
       return response;
-    } on TimeoutException catch (e) {
+    } on TimeoutException {
       if (retryCount < maxRetries) {
         await Future.delayed(Duration(milliseconds: 500 * (retryCount + 1)));
         return await makeRequest(

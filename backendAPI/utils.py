@@ -1,6 +1,10 @@
+import re
+import logging
 from flask import request, jsonify
 from sqlalchemy import or_, and_
 from extensions import db
+
+logger = logging.getLogger(__name__)
 
 
 # ── Validation ──
@@ -21,13 +25,24 @@ def validate_password(password):
     return None
 
 
+def validate_alphanumeric(value, label='Value'):
+    if not re.fullmatch(r'[A-Za-z0-9\-_]+', value):
+        return jsonify({'message': f'{label} must contain only English letters, numbers, hyphens or underscores (no spaces)'}), 400
+    return None
+
+
 # ── Resource lookup ──
 
 def get_or_404(model, public_id, label=None, **extra_filters):
     query = model.query.filter_by(public_id=public_id, **extra_filters)
     resource = query.first()
     if not resource:
-        name = label or model.__tablename__.rstrip('s').capitalize()
+        # Derive a readable label from the table name by stripping a trailing 's'.
+        # Using [:-1] (remove exactly the last char) is safer than rstrip('s')
+        # which would strip all trailing 's' chars (e.g. 'admins' → 'admi').
+        tablename = model.__tablename__
+        singular = tablename[:-1] if tablename.endswith('s') else tablename
+        name = label or singular.capitalize()
         return None, (jsonify({'message': f'{name} not found'}), 404)
     return resource, None
 
@@ -64,7 +79,8 @@ def blacklist_tokens(claims, public_id, user_type, refresh_token_raw=None):
     from flask_jwt_extended import decode_token
     from datetime import datetime, timezone
 
-    exp = datetime.fromtimestamp(claims['exp'], tz=timezone.utc)
+    # DB DateTime columns are naive UTC — strip tzinfo before storing
+    exp = datetime.fromtimestamp(claims['exp'], tz=timezone.utc).replace(tzinfo=None)
     TokenBlacklist.add_to_blacklist(
         jti=claims['jti'],
         token_type=claims['type'],
@@ -76,7 +92,7 @@ def blacklist_tokens(claims, public_id, user_type, refresh_token_raw=None):
     if refresh_token_raw:
         try:
             refresh_claims = decode_token(refresh_token_raw)
-            refresh_exp = datetime.fromtimestamp(refresh_claims['exp'], tz=timezone.utc)
+            refresh_exp = datetime.fromtimestamp(refresh_claims['exp'], tz=timezone.utc).replace(tzinfo=None)
             TokenBlacklist.add_to_blacklist(
                 jti=refresh_claims['jti'],
                 token_type='refresh',
@@ -84,9 +100,8 @@ def blacklist_tokens(claims, public_id, user_type, refresh_token_raw=None):
                 user_type=user_type,
                 expires_at=refresh_exp
             )
-        except (Exception) as e:
-            import logging
-            logging.getLogger(__name__).warning(f'Failed to blacklist refresh token: {e}')
+        except Exception as e:
+            logger.warning('Failed to blacklist refresh token: %s', e)
 
     db.session.commit()
 

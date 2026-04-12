@@ -2,10 +2,11 @@ from flask import request, jsonify
 from flask_jwt_extended import jwt_required
 from admin_api import admin_bp
 from extensions import db
-from models import Admin, AdminRole, Article
+from models import Admin, AdminRole, Article, AdminSession
 from decorators import admin_required
 from utils import paginate_query, apply_filters, apply_sorting, format_paginated, validate_required, validate_password, get_or_404, check_unique
-from datetime import datetime
+from session_cache import session_cache
+from datetime import datetime, timezone
 
 
 @admin_bp.route('/admins', methods=['GET'])
@@ -61,7 +62,7 @@ def create_admin(current_admin):
 @admin_bp.route('/admins/<admin_id>', methods=['GET'])
 @jwt_required()
 @admin_required
-def get_admin(_, admin_id):
+def get_admin(current_admin, admin_id):
     admin, err = get_or_404(Admin, admin_id)
     if err: return err
     return jsonify(admin.to_dict()), 200
@@ -135,8 +136,6 @@ def delete_own_account(admin):
     if Admin.query.count() <= 1:
         return jsonify({'message': 'At least one admin is required. Cannot delete.'}), 400
 
-    from models import AdminSession
-    from session_cache import session_cache
     sessions = AdminSession.query.filter(
         AdminSession.admin_id == admin.id,
         AdminSession.status.in_(['active', 'grace_period'])

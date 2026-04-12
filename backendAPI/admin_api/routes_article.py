@@ -12,7 +12,7 @@ from datetime import datetime
 @admin_bp.route('/articles', methods=['GET'])
 @jwt_required()
 @admin_required
-def get_articles(_):
+def get_articles(admin):
     query = Article.query.options(joinedload(Article.admin_author)).filter_by(is_deleted=False)
 
     filters = {
@@ -71,7 +71,7 @@ def create_article(admin):
 @admin_bp.route('/articles/<article_id>', methods=['GET'])
 @jwt_required()
 @admin_required
-def get_article(_, article_id):
+def get_article(admin, article_id):
     article, err = get_or_404(Article, article_id, is_deleted=False)
     if err: return err
     return jsonify(article.to_dict()), 200

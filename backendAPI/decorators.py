@@ -1,5 +1,12 @@
+# Convention: ALL db.Column(db.DateTime) fields in this project are naive UTC.
+# Always produce a naive datetime before storing or comparing:
+#   datetime.now(timezone.utc).replace(tzinfo=None)          ← current time
+#   datetime.fromtimestamp(ts, tz=timezone.utc).replace(tzinfo=None)  ← from epoch
+# Never store a timezone-aware datetime directly — SQLAlchemy will raise SAWarning
+# and SQLite may embed the "+00:00" suffix, breaking subsequent ">" comparisons.
+
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone
 from flask import jsonify
 from flask_jwt_extended import get_jwt_identity, get_jwt
 from models import Admin, User
@@ -36,7 +43,7 @@ def _validate_admin_session(session_id, admin_internal_id):
         return None, 'SESSION_REVOKED'
 
     if session.status == 'grace_period':
-        if session.grace_until and datetime.utcnow() <= session.grace_until:
+        if session.grace_until and datetime.now(timezone.utc).replace(tzinfo=None) <= session.grace_until:
             return {'session_id': session.id, 'admin_id': session.admin_id, 'status': 'grace_period'}, None
         from extensions import db
         session.status = 'revoked'
@@ -44,7 +51,7 @@ def _validate_admin_session(session_id, admin_internal_id):
         session_cache.set(session_id, False)
         return None, 'SESSION_REPLACED'
 
-    session.last_active_at = datetime.utcnow()
+    session.last_active_at = datetime.now(timezone.utc).replace(tzinfo=None)
     from extensions import db
     db.session.commit()
 

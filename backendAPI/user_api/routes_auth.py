@@ -4,7 +4,7 @@ from flask_jwt_extended import (
     jwt_required, get_jwt_identity, get_jwt
 )
 from user_api import user_bp
-from extensions import db
+from extensions import db, limiter
 from models import User, TokenBlacklist
 from decorators import user_required
 from utils import validate_required, validate_password, blacklist_tokens
@@ -12,15 +12,16 @@ from datetime import datetime, timezone
 
 
 @user_bp.route('/login', methods=['POST'])
+@limiter.limit("5 per minute")
 def login():
-    data = request.get_json()
+    data = request.get_json(silent=True)
 
     err = validate_required(data, ['email', 'password'])
     if err: return err
 
     user = User.query.filter_by(email=data['email']).first()
     if not user or not user.check_password(data['password']):
-        return jsonify({'message': 'Invalid email or password'}), 401
+        return jsonify({'code': 'INVALID_CREDENTIALS', 'message': 'Invalid email or password'}), 401
 
     additional_claims = {'user_type': 'user'}
     access_token = create_access_token(identity=user.public_id, additional_claims=additional_claims)
@@ -46,7 +47,8 @@ def refresh():
     if not user:
         return jsonify({'message': 'User not found'}), 404
 
-    old_exp = datetime.fromtimestamp(claims['exp'], tz=timezone.utc)
+    # DB DateTime columns are naive UTC — strip tzinfo before storing
+    old_exp = datetime.fromtimestamp(claims['exp'], tz=timezone.utc).replace(tzinfo=None)
     TokenBlacklist.add_to_blacklist(
         jti=claims['jti'],
         token_type='refresh',
@@ -68,10 +70,9 @@ def refresh():
 @user_required
 def logout(user):
     claims = get_jwt()
-    public_id = get_jwt_identity()
 
     data = request.get_json(silent=True) or {}
-    blacklist_tokens(claims, public_id, 'user', refresh_token_raw=data.get('refresh_token'))
+    blacklist_tokens(claims, user.public_id, 'user', refresh_token_raw=data.get('refresh_token'))
 
     return jsonify({'message': 'Successfully logged out'}), 200
 
@@ -87,7 +88,7 @@ def get_profile(user):
 @jwt_required()
 @user_required
 def change_password(user):
-    data = request.get_json()
+    data = request.get_json(silent=True)
 
     err = validate_required(data, ['old_password', 'new_password'])
     if err: return err

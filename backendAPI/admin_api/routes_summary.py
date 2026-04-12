@@ -8,7 +8,7 @@ from decorators import admin_required
 @admin_bp.route('/summary', methods=['GET'])
 @jwt_required()
 @admin_required
-def get_summary(_):
+def get_summary(admin):
     """Get dashboard summary counts from pre-computed summary table."""
     rows = Summary.query.all()
     counts = {row.table_name: row.row_count for row in rows}

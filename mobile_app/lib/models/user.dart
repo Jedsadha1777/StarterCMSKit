@@ -17,9 +17,17 @@ class User {
     return User(
       id: json['id'].toString(),
       name: json['name'] ?? '',
-      email: json['email'],
-      createdAt: json['created_at'],
-      updatedAt: json['updated_at'],
+      email: json['email'] ?? '',
+      createdAt: json['created_at'] ?? '',
+      updatedAt: json['updated_at'] ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'email': email,
+        'created_at': createdAt,
+        'updated_at': updatedAt,
+      };
 }

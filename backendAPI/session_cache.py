@@ -3,9 +3,9 @@ import threading
 
 
 class SessionCache:
-    """In-memory cache for admin session validity. TTL=10s."""
+    """In-memory cache for admin session validity. TTL=60s."""
 
-    def __init__(self, ttl=10):
+    def __init__(self, ttl=60):
         self._ttl = ttl
         self._store = {}
         self._lock = threading.Lock()
@@ -26,4 +26,4 @@ class SessionCache:
             self._store.pop(session_id, None)
 
 
-session_cache = SessionCache(ttl=10)
+session_cache = SessionCache(ttl=60)

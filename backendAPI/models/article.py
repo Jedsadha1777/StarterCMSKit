@@ -1,6 +1,6 @@
 from uuid import uuid4
 from extensions import db
-from datetime import datetime
+from datetime import datetime, timezone
 
 class Article(db.Model):
     __tablename__ = 'articles'
@@ -14,8 +14,8 @@ class Article(db.Model):
     publish_date = db.Column(db.DateTime, nullable=True)
     version = db.Column(db.Integer, nullable=False, default=1)
     is_deleted = db.Column(db.Boolean, nullable=False, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     
     def to_dict(self):
         return {

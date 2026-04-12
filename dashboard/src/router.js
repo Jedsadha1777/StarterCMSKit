@@ -8,6 +8,8 @@ import Users from './views/Users.vue'
 import UserForm from './views/UserForm.vue'
 import Admins from './views/Admins.vue'
 import AdminForm from './views/AdminForm.vue'
+import Customers from './views/Customers.vue'
+import CustomerForm from './views/CustomerForm.vue'
 import Profile from './views/Profile.vue'
 import Settings from './views/Settings.vue'
 
@@ -23,6 +25,9 @@ const routes = [
   { path: '/admins', name: 'Admins', component: Admins, meta: { requiresAuth: true, requires: 'admins.view' } },
   { path: '/admins/new', name: 'AdminNew', component: AdminForm, meta: { requiresAuth: true, requires: 'admins.create' } },
   { path: '/admins/:id/edit', name: 'AdminEdit', component: AdminForm, meta: { requiresAuth: true, requires: 'admins.edit' } },
+  { path: '/customers', name: 'Customers', component: Customers, meta: { requiresAuth: true, requires: 'customers.view' } },
+  { path: '/customers/new', name: 'CustomerNew', component: CustomerForm, meta: { requiresAuth: true, requires: 'customers.create' } },
+  { path: '/customers/:id/edit', name: 'CustomerEdit', component: CustomerForm, meta: { requiresAuth: true, requires: 'customers.edit' } },
   { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true, requires: 'settings.view' } },
   { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' }
@@ -34,7 +39,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
-  const hasToken = localStorage.getItem('access_token')
+  const hasToken = sessionStorage.getItem('access_token')
   const hasRefreshToken = localStorage.getItem('refresh_token')
 
   if (to.path === from.path) { next(); return }
@@ -52,6 +57,15 @@ router.beforeEach((to, from, next) => {
     else next()
   } else {
     next()
+  }
+})
+
+// D4: ตรวจจับ logout จาก tab อื่น — storage event fires เมื่อ localStorage เปลี่ยนใน tab อื่น
+// เมื่อ refresh_token ถูกลบ (logout/security_alert) ให้ redirect ไป /login ทันที
+window.addEventListener('storage', (event) => {
+  if (event.key === 'refresh_token' && !event.newValue) {
+    sessionStorage.removeItem('access_token')
+    router.push('/login')
   }
 })
 

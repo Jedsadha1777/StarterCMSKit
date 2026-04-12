@@ -12,14 +12,18 @@ const admin = reactive({
 
 function loadFromStorage() {
   try {
+    // Only name and email are persisted — permissions/limits are re-fetched from the server
     const data = JSON.parse(localStorage.getItem('admin') || '{}')
-    Object.assign(admin, data)
+    if (data.name)  admin.name  = data.name
+    if (data.email) admin.email = data.email
   } catch { /* ignore */ }
 }
 
 function save(data) {
   Object.assign(admin, data)
-  localStorage.setItem('admin', JSON.stringify(data))
+  // Store only display fields — keep role/permissions/limits out of localStorage
+  // to limit XSS privilege reconnaissance (audit D1)
+  localStorage.setItem('admin', JSON.stringify({ name: data.name, email: data.email }))
   window.dispatchEvent(new Event('storage-updated'))
 }
 
