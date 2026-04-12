@@ -51,7 +51,10 @@ def create_admin(current_admin):
     err = validate_password(data['password'])
     if err: return err
 
-    admin = Admin(name=data['name'], email=data['email'])
+    from models import Package
+    default_package = Package.query.filter_by(name='default').first()
+
+    admin = Admin(name=data['name'], email=data['email'], package_id=default_package.id if default_package else None)
     admin.set_password(data['password'])
     db.session.add(admin)
     db.session.commit()

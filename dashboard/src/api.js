@@ -270,6 +270,39 @@ export default {
     return api.delete(`/customers/${id}`)
   },
 
+  exportCustomers() {
+    return api.get('/customers/export', { responseType: 'blob' })
+  },
+
+  importCustomersPreview(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/customers/import/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+
+  importCustomersConfirm(file, rows) {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('rows', JSON.stringify(rows))
+    return api.post('/customers/import/confirm', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+
+  getImportHistory(params = {}) {
+    return api.get('/customers/import/history', { params })
+  },
+
+  downloadImportFile(id) {
+    return api.get(`/customers/import/history/${id}/download`, { responseType: 'blob' })
+  },
+
+  deleteImportHistory(id) {
+    return api.delete(`/customers/import/history/${id}`)
+  },
+
   getSettings() {
     return api.get('/settings')
   },

@@ -322,7 +322,65 @@ const allNavItems = [
 
 ---
 
-## 7. Checklist — เพิ่ม Entity ใหม่
+## 7. Export / Import Excel
+
+### Export Pattern
+
+**Endpoint:** `GET /admin-api/<entities>/export`
+**Permission:** ใช้ `<entity>.view` (ดูได้ = export ได้)
+
+- ไม่ expose `public_id` (UUID) ใน Excel — ใช้ field ID ที่ user กรอกเองแทน
+- ใช้ `openpyxl` สร้าง workbook → `send_file(BytesIO, ...)`
+- column ที่เป็น reference (เช่น created_by) ให้ export เป็นชื่อ ไม่ใช่ ID
+
+### Import Pattern — 2 Step (Preview → Confirm)
+
+| Step | Endpoint | หน้าที่ |
+|------|----------|---------|
+| 1 | `POST /<entities>/import/preview` | อ่าน Excel → validate → return preview (ไม่ save) |
+| 2 | `POST /<entities>/import/confirm` | save เฉพาะ row ที่ user เลือก + เก็บไฟล์ลง history |
+
+**Permission:** ต้องมีทั้ง `<entity>.create` + `<entity>.edit` (เพราะทำทั้ง insert และ update)
+
+**Preview logic:**
+1. อ่าน header row → map column
+2. validate ทุก row (required, format)
+3. เทียบกับ DB → กำหนด status:
+   - `new` — ไม่มีใน DB → จะ insert
+   - `replace` — มีอยู่แล้ว → จะ update (return ค่าเดิมใน `existing`)
+   - `error` — validation ไม่ผ่าน (return `errors[]`)
+
+**Frontend preview table:**
+- แต่ละ row มี checkbox — user เลือกได้ว่าจะ import row ไหน
+- `new` / `replace` → checkbox เปิด default
+- `error` → checkbox disabled
+- `replace` → แสดงค่าเดิม strikethrough เทียบค่าใหม่
+
+**Confirm:** ส่งเฉพาะ row ที่เลือก + ไฟล์ Excel เดิม (เก็บลง history)
+
+### Import History
+
+**Model:** `ImportHistory` — เก็บ original_filename, stored_filename, imported_by, created_at
+**ไฟล์เก็บที่:** `static/imports/` (ตาม pattern ที่ settings upload ใช้ `static/`)
+
+| Method | Endpoint | หน้าที่ |
+|--------|----------|---------|
+| `GET` | `/<entities>/import/history` | ดูรายการ import (paginated) |
+| `GET` | `/<entities>/import/history/<id>/download` | ดาวน์โหลดไฟล์ Excel เดิม |
+| `DELETE` | `/<entities>/import/history/<id>` | ลบ record + ไฟล์ |
+
+### Frontend Components
+
+| Component | ใช้ทำอะไร |
+|-----------|----------|
+| `ImportPreviewDialog.vue` | แสดงตาราง preview + checkbox + confirm |
+| `ImportHistoryDialog.vue` | แสดงรายการ import history + download/delete |
+
+ทั้งสอง component วางไว้ใน `components/` เป็น dialog reusable
+
+---
+
+## 8. Checklist — เพิ่ม Entity ใหม่
 
 เวลาเพิ่ม resource ใหม่ ทำตาม checklist นี้:
 
@@ -343,6 +401,15 @@ const allNavItems = [
 - [ ] สร้าง `views/<Entity>Form.vue` — form page
 - [ ] แก้ `router.js` — เพิ่ม 3 routes + import
 - [ ] แก้ `App.vue` — เพิ่มใน `allNavItems`
+
+### Export / Import (ถ้าต้องการ)
+
+- [ ] เพิ่ม `openpyxl` ใน `requirements.txt` (ถ้ายังไม่มี)
+- [ ] สร้าง `ImportHistory` model + migration (ถ้ายังไม่มี)
+- [ ] เพิ่ม export/import/history endpoints ใน routes
+- [ ] เพิ่ม API methods ใน `api.js`
+- [ ] สร้าง `ImportPreviewDialog.vue` + `ImportHistoryDialog.vue` (หรือ reuse ที่มี)
+- [ ] เพิ่มปุ่ม Export / Import / History ใน list page
 
 ### Validation
 

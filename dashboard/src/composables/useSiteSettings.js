@@ -58,12 +58,15 @@ function logoUrl() {
 
 function formatDate(d) {
   if (!d) return '-'
-  const date = new Date(d)
-  const Y = date.getFullYear()
-  const M = String(date.getMonth() + 1).padStart(2, '0')
-  const D = String(date.getDate()).padStart(2, '0')
-  const h = String(date.getHours()).padStart(2, '0')
-  const m = String(date.getMinutes()).padStart(2, '0')
+  // Backend stores naive UTC — append 'Z' so JS treats it as UTC, then convert to Asia/Bangkok
+  const utcStr = d.endsWith('Z') ? d : d + 'Z'
+  const date = new Date(utcStr)
+  const thai = new Date(date.getTime() + 7 * 60 * 60 * 1000)
+  const Y = thai.getUTCFullYear()
+  const M = String(thai.getUTCMonth() + 1).padStart(2, '0')
+  const D = String(thai.getUTCDate()).padStart(2, '0')
+  const h = String(thai.getUTCHours()).padStart(2, '0')
+  const m = String(thai.getUTCMinutes()).padStart(2, '0')
 
   const fmt = settings.date_format || 'YYYY-MM-DD'
 
