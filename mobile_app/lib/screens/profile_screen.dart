@@ -75,7 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     Row(
                       children: [
-                        Icon(Icons.person, color: Colors.blue.shade400),
+                        Icon(Icons.person, color: Theme.of(context).colorScheme.primary),
                         const SizedBox(width: 8),
                         const Text('Account Information',
                             style: TextStyle(
@@ -111,7 +111,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.lock, color: Colors.blue.shade400),
+                          Icon(Icons.lock, color: Theme.of(context).colorScheme.primary),
                           const SizedBox(width: 8),
                           const Text('Change Password',
                               style: TextStyle(

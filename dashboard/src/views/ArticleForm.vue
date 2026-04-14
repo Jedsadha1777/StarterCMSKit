@@ -3,10 +3,10 @@
     <v-text-field v-model="form.title" label="Title *" variant="outlined" required class="mb-4" />
     <v-textarea v-model="form.content" label="Content *" variant="outlined" rows="10" required class="mb-4" />
     <div class="d-flex ga-4 mb-4 align-center">
-      <v-select v-model="form.status" :items="['draft', 'published']" label="Status" variant="outlined" style="max-width:200px" @update:model-value="onStatusChange" />
+      <v-select v-model="form.status" :items="['draft', 'published']" label="Status" variant="outlined" hide-details style="max-width:200px" @update:model-value="onStatusChange" />
       <template v-if="form.status === 'published'">
         <DatePicker v-model="publishDatePart" label="Publish Date" />
-        <v-text-field v-model="publishTimePart" label="Time (HH:MM)" variant="outlined" placeholder="14:30" style="max-width:140px" maxlength="5" />
+        <v-text-field v-model="publishTimePart" label="Time (HH:MM)" variant="outlined" hide-details placeholder="14:30" style="max-width:140px" maxlength="5" />
       </template>
     </div>
   </FormPage>

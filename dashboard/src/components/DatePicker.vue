@@ -6,7 +6,6 @@
         v-bind="props"
         :label="label"
         variant="outlined"
-        density="compact"
         hide-details
         readonly
         clearable

@@ -66,7 +66,7 @@ def create_app():
     app.register_blueprint(user_bp)
     
     # Import models to ensure they are registered with SQLAlchemy
-    from models import Admin, User, Article, TokenBlacklist, Summary, AdminSession, Setting, Customer, ImportHistory
+    from models import Admin, User, Article, TokenBlacklist, Summary, AdminSession, Setting, Customer, ImportHistory, InspectionItem
     
     @app.route('/')
     def index():

@@ -69,7 +69,7 @@ export default {
 
     const columns = [
       { key: 'customer_id', label: 'Customer ID', sortable: true, width: '160px' },
-      { key: 'name', label: 'Name', sortable: true },
+      { key: 'name', label: 'Name', sortable: true, link: true },
       { key: 'address', label: 'Address' },
       { key: 'created_by_name', label: 'Created By', width: '140px' },
       { key: 'created_at', label: 'Created', sortable: true, width: '140px', nowrap: true },

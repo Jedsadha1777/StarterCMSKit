@@ -134,6 +134,7 @@ export default {
       { to: '/users',     icon: 'mdi-account-group',   title: 'Users',      match: '/users',     requires: 'users.view' },
       { to: '/admins',    icon: 'mdi-shield-account',  title: 'Admins',     match: '/admins',    requires: 'admins.view' },
       { to: '/customers', icon: 'mdi-account-multiple', title: 'Customers',  match: '/customers', requires: 'customers.view' },
+      { to: '/inspection-items', icon: 'mdi-clipboard-check', title: 'Inspection',  match: '/inspection-items', requires: 'inspection_items.view' },
     ]
 
     const navItems = computed(() =>

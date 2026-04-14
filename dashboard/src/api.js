@@ -230,6 +230,10 @@ export default {
     return api.delete(`/users/${id}`)
   },
 
+  getPackages() {
+    return api.get('/packages')
+  },
+
   getAdmins(params = {}) {
     return api.get('/admins', { params })
   },
@@ -301,6 +305,59 @@ export default {
 
   deleteImportHistory(id) {
     return api.delete(`/customers/import/history/${id}`)
+  },
+
+  getInspectionItems(params = {}) {
+    return api.get('/inspection-items', { params })
+  },
+
+  getInspectionItem(id) {
+    return api.get(`/inspection-items/${id}`)
+  },
+
+  createInspectionItem(data) {
+    return api.post('/inspection-items', data)
+  },
+
+  updateInspectionItem(id, data) {
+    return api.put(`/inspection-items/${id}`, data)
+  },
+
+  deleteInspectionItem(id) {
+    return api.delete(`/inspection-items/${id}`)
+  },
+
+  exportInspectionItems() {
+    return api.get('/inspection-items/export', { responseType: 'blob' })
+  },
+
+  importInspectionItemsPreview(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/inspection-items/import/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+
+  importInspectionItemsConfirm(file, rows) {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('rows', JSON.stringify(rows))
+    return api.post('/inspection-items/import/confirm', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+
+  getInspectionImportHistory(params = {}) {
+    return api.get('/inspection-items/import/history', { params })
+  },
+
+  downloadInspectionImportFile(id) {
+    return api.get(`/inspection-items/import/history/${id}/download`, { responseType: 'blob' })
+  },
+
+  deleteInspectionImportHistory(id) {
+    return api.delete(`/inspection-items/import/history/${id}`)
   },
 
   getSettings() {

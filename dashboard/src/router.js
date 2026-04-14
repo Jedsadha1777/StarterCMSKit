@@ -10,6 +10,8 @@ import Admins from './views/Admins.vue'
 import AdminForm from './views/AdminForm.vue'
 import Customers from './views/Customers.vue'
 import CustomerForm from './views/CustomerForm.vue'
+import InspectionItems from './views/InspectionItems.vue'
+import InspectionItemForm from './views/InspectionItemForm.vue'
 import Profile from './views/Profile.vue'
 import Settings from './views/Settings.vue'
 
@@ -28,6 +30,9 @@ const routes = [
   { path: '/customers', name: 'Customers', component: Customers, meta: { requiresAuth: true, requires: 'customers.view' } },
   { path: '/customers/new', name: 'CustomerNew', component: CustomerForm, meta: { requiresAuth: true, requires: 'customers.create' } },
   { path: '/customers/:id/edit', name: 'CustomerEdit', component: CustomerForm, meta: { requiresAuth: true, requires: 'customers.edit' } },
+  { path: '/inspection-items', name: 'InspectionItems', component: InspectionItems, meta: { requiresAuth: true, requires: 'inspection_items.view' } },
+  { path: '/inspection-items/new', name: 'InspectionItemNew', component: InspectionItemForm, meta: { requiresAuth: true, requires: 'inspection_items.create' } },
+  { path: '/inspection-items/:id/edit', name: 'InspectionItemEdit', component: InspectionItemForm, meta: { requiresAuth: true, requires: 'inspection_items.edit' } },
   { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true, requires: 'settings.view' } },
   { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' }

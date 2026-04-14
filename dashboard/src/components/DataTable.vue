@@ -21,9 +21,9 @@
       <tbody>
         <tr v-for="item in items" :key="item.id">
           <!-- Dynamic cells -->
-          <td v-for="(col, colIndex) in columns" :key="col.key" :class="[col.nowrap ? 'text-no-wrap' : '', colIndex === 0 ? 'font-weight-bold' : '']">
+          <td v-for="(col, colIndex) in columns" :key="col.key" :class="[col.nowrap ? 'text-no-wrap' : '', (colIndex === 0 || col.link) ? 'font-weight-bold' : '']">
             <slot :name="`cell-${col.key}`" :item="item">
-              <router-link v-if="colIndex === 0 && editBasePath" :to="`${editBasePath}/${item.id}/edit`" class="title-link">
+              <router-link v-if="(colIndex === 0 || col.link) && editBasePath" :to="`${editBasePath}/${item.id}/edit`" class="title-link">
                 {{ item[col.key] }}
                 <v-icon size="small" class="edit-icon ml-1">mdi-pencil</v-icon>
               </router-link>

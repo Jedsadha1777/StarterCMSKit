@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML to Dart Code Generator</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>HTML to Dart/Flutter Code Generator</h1>
+            <p>Convert HTML tables, forms, and widgets to Flutter Dart code</p>
+        </div>
+
+        <div class="content">
+            <!-- Left Panel: HTML Input -->
+            <div class="panel input-panel">
+                <div class="panel-header">
+                    <h2>HTML Input</h2>
+                    <div class="button-group">
+                        <button id="convertBtn" class="btn btn-primary">Convert to Dart</button>
+                        <button id="clearBtn" class="btn btn-danger">Clear</button>
+                        <button id="exampleBasic" class="btn btn-small">Basic</button>
+                        <button id="exampleColspan" class="btn btn-small">Colspan</button>
+                        <button id="exampleRowspan" class="btn btn-small">Rowspan</button>
+                        <button id="exampleForm" class="btn btn-small">Form</button>
+                        <button id="exampleParts" class="btn btn-small">Parts</button>
+                        <button id="exampleHtml4full" class="btn btn-small">HTML4</button>
+                        <button id="exampleLuckysheet" class="btn btn-small">Luckysheet</button>
+                        <button id="exampleNutrition" class="btn btn-small">Nutrition</button>
+                    </div>
+                </div>
+                <div class="tabs input-tabs">
+                    <button class="tab-btn active" data-input-tab="editor">HTML Code</button>
+                    <button class="tab-btn" data-input-tab="preview">Preview</button>
+                </div>
+                <div class="input-tab-content active" id="editor-tab">
+                    <textarea
+                        id="htmlInput"
+                        class="editor"
+                        placeholder="Paste your HTML here...
+Example:
+&lt;table border=&quot;1&quot; cellpadding=&quot;8&quot;&gt;
+  &lt;tr&gt;
+    &lt;th&gt;Name&lt;/th&gt;
+    &lt;th&gt;Email&lt;/th&gt;
+  &lt;/tr&gt;
+  &lt;tr&gt;
+    &lt;td&gt;&lt;input type=&quot;text&quot; name=&quot;name&quot; /&gt;&lt;/td&gt;
+    &lt;td&gt;&lt;input type=&quot;email&quot; name=&quot;email&quot; /&gt;&lt;/td&gt;
+  &lt;/tr&gt;
+&lt;/table&gt;
+"></textarea>
+                </div>
+                <div class="input-tab-content" id="preview-tab">
+                    <div id="htmlPreview" class="html-preview"></div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Output -->
+            <div class="panel output-panel">
+                <div class="output-header">
+                    <h3 id="outputTitle">main.dart</h3>
+                    <div class="button-group">
+                        <div class="output-mode-toggle">
+                            <button id="modeDart" class="btn btn-mode active">Dart</button>
+                            <button id="modeJson" class="btn btn-mode">JSON</button>
+                        </div>
+                        <button id="copyWidgetBtn" class="btn btn-small">Copy</button>
+                        <button id="exportDartBtn" class="btn btn-export" onclick="App.exportOutput()">Export</button>
+                    </div>
+                </div>
+                <pre id="dartOutput" class="editor-output"></pre>
+
+                <!-- Hidden outputs used by JS to assemble main.dart -->
+                <pre id="controllersOutput" style="display:none"></pre>
+                <pre id="stateOutput" style="display:none"></pre>
+                <pre id="importsOutput" style="display:none"></pre>
+                <pre id="boilerplateOutput" style="display:none"></pre>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Scripts - Load in correct order -->
+    <script src="https://cdn.jsdelivr.net/npm/juice@10.0.0/client.js"></script>
+    <script src="js/ast.js"></script>
+    <script src="js/pretext.bundle.js"></script>
+    <script src="js/style-parser.js"></script>
+    <script src="js/parser.js"></script>
+    <script src="js/table-handler.js"></script>
+    <script src="js/generator.js"></script>
+    <script src="js/json-generator.js"></script>
+    <script src="js/app.js"></script>
+    <!-- App.init() is called by DOMContentLoaded listener in app.js -->
+</body>
+</html>

@@ -17,4 +17,6 @@ def get_summary(admin):
         'articles': counts.get('articles', 0),
         'users': counts.get('users', 0),
         'admins': counts.get('admins', 0),
+        'customers': counts.get('customers', 0),
+        'inspection_items': counts.get('inspection_items', 0),
     }), 200

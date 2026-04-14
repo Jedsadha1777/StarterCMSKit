@@ -52,7 +52,9 @@ class _LoginScreenState extends State<LoginScreen> {
         child: Stack(
           children: [
             Align(
-              alignment: const Alignment(0, -0.8),
+              alignment: MediaQuery.of(context).size.shortestSide >= 600
+                  ? const Alignment(0, -0.3)
+                  : const Alignment(0, -0.8),
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: ConstrainedBox(
@@ -62,33 +64,23 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.lock_outline,
-                          size: 64,
-                          color: Colors.blue.shade400,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Log In',
-                          style: TextStyle(
-                              fontSize: 28, fontWeight: FontWeight.bold),
+                        Image.asset(
+                          'assets/logo.png',
+                          height: 80,
                         ),
                         const SizedBox(height: 32),
                         TextFormField(
                           controller: _emailController,
                           decoration: const InputDecoration(
-                            labelText: 'Email',
-                            prefixIcon: Icon(Icons.email),
+                            labelText: 'Username or Email',
+                            prefixIcon: Icon(Icons.person),
                             border: OutlineInputBorder(),
                           ),
-                          keyboardType: TextInputType.emailAddress,
+                          keyboardType: TextInputType.text,
                           textInputAction: TextInputAction.next,
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
-                              return 'Please enter email';
-                            }
-                            if (!value.contains('@')) {
-                              return 'Please enter a valid email';
+                              return 'Please enter username or email';
                             }
                             return null;
                           },

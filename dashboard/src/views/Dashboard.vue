@@ -4,7 +4,7 @@
 
     <v-container>
       <v-row class="mb-8">
-        <v-col cols="12" sm="4">
+        <v-col cols="12" sm="3">
           <v-card variant="outlined">
             <v-card-text class="text-center">
               <div class="text-h3 text-primary font-weight-bold">{{ stats.articles }}</div>
@@ -12,7 +12,7 @@
             </v-card-text>
           </v-card>
         </v-col>
-        <v-col cols="12" sm="4">
+        <v-col cols="12" sm="3">
           <v-card variant="outlined">
             <v-card-text class="text-center">
               <div class="text-h3 text-primary font-weight-bold">{{ stats.users }}</div>
@@ -20,11 +20,19 @@
             </v-card-text>
           </v-card>
         </v-col>
-        <v-col cols="12" sm="4">
+        <v-col cols="12" sm="3">
           <v-card variant="outlined">
             <v-card-text class="text-center">
-              <div class="text-h5 text-primary font-weight-bold">{{ adminInfo.email }}</div>
-              <div class="text-overline">Logged in as</div>
+              <div class="text-h3 text-primary font-weight-bold">{{ stats.customers }}</div>
+              <div class="text-overline">Customers</div>
+            </v-card-text>
+          </v-card>
+        </v-col>
+        <v-col cols="12" sm="3">
+          <v-card variant="outlined">
+            <v-card-text class="text-center">
+              <div class="text-h3 text-primary font-weight-bold">{{ stats.inspection_items }}</div>
+              <div class="text-overline">Inspection Items</div>
             </v-card-text>
           </v-card>
         </v-col>
@@ -42,13 +50,13 @@
           </v-btn>
         </v-col>
         <v-col cols="6" sm="3">
-          <v-btn color="primary" variant="flat" block size="large" to="/articles/new" class="mb-3">
-            <v-icon start>mdi-pencil-plus</v-icon>New Article
+          <v-btn color="primary" variant="flat" block size="large" to="/customers" class="mb-3">
+            <v-icon start>mdi-account-multiple</v-icon>Customers
           </v-btn>
         </v-col>
         <v-col cols="6" sm="3">
-          <v-btn color="primary" variant="flat" block size="large" to="/users/new" class="mb-3">
-            <v-icon start>mdi-account-plus</v-icon>New User
+          <v-btn color="primary" variant="flat" block size="large" to="/inspection-items" class="mb-3">
+            <v-icon start>mdi-clipboard-check</v-icon>Inspection
           </v-btn>
         </v-col>
       </v-row>
@@ -60,23 +68,23 @@
 import { ref, onMounted } from 'vue'
 import api from '../api'
 import PageBanner from '../components/PageBanner.vue'
-import { useAdmin } from '../composables/useAdmin'
 
 export default {
   components: { PageBanner },
   setup() {
-    const stats = ref({ articles: 0, users: 0 })
-    const { admin: adminInfo } = useAdmin()
+    const stats = ref({ articles: 0, users: 0, customers: 0, inspection_items: 0 })
 
     onMounted(async () => {
       try {
         const { data } = await api.getSummary()
         stats.value.articles = data.articles
         stats.value.users = data.users
+        stats.value.customers = data.customers || 0
+        stats.value.inspection_items = data.inspection_items || 0
       } catch {}
     })
 
-    return { stats, adminInfo }
+    return { stats }
   }
 }
 </script>

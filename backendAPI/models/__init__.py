@@ -16,6 +16,7 @@ from .setting import Setting
 from .package import Package, PackageLimit, PackageRolePermission
 from .customer import Customer
 from .import_history import ImportHistory
+from .inspection_item import InspectionItem
 
 __all__ = ['Admin', 'AdminRole', 'User', 'Article', 'TokenBlacklist', 'Summary', 'AdminSession', 'Setting',
-           'Package', 'PackageLimit', 'PackageRolePermission', 'Customer', 'ImportHistory']
+           'Package', 'PackageLimit', 'PackageRolePermission', 'Customer', 'ImportHistory', 'InspectionItem']

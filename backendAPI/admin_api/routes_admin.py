@@ -2,11 +2,19 @@ from flask import request, jsonify
 from flask_jwt_extended import jwt_required
 from admin_api import admin_bp
 from extensions import db
-from models import Admin, AdminRole, Article, AdminSession
+from models import Admin, AdminRole, Article, AdminSession, Package
 from decorators import admin_required
 from utils import paginate_query, apply_filters, apply_sorting, format_paginated, validate_required, validate_password, get_or_404, check_unique
 from session_cache import session_cache
 from datetime import datetime, timezone
+
+
+@admin_bp.route('/packages', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_packages(admin):
+    packages = Package.query.order_by(Package.name).all()
+    return jsonify({'packages': [p.to_dict() for p in packages]}), 200
 
 
 @admin_bp.route('/admins', methods=['GET'])
@@ -39,7 +47,7 @@ def create_admin(current_admin):
 
     data = request.get_json()
 
-    err = validate_required(data, ['name', 'email', 'password'])
+    err = validate_required(data, ['name', 'email', 'password', 'role', 'package_id'])
     if err: return err
 
     err = check_unique(Admin, 'name', data['name'])
@@ -51,10 +59,18 @@ def create_admin(current_admin):
     err = validate_password(data['password'])
     if err: return err
 
-    from models import Package
-    default_package = Package.query.filter_by(name='default').first()
+    role = data.get('role')
+    if role not in ('admin', 'editor'):
+        return jsonify({'message': 'Role must be admin or editor'}), 400
 
-    admin = Admin(name=data['name'], email=data['email'], package_id=default_package.id if default_package else None)
+    if role == 'admin' and not current_admin.is_super_admin:
+        return jsonify({'message': 'Only super_admin can create admin role'}), 403
+
+    package = Package.query.get(data['package_id'])
+    if not package:
+        return jsonify({'message': 'Package not found. Please configure a package first.'}), 400
+
+    admin = Admin(name=data['name'], email=data['email'], role=role, package_id=package.id)
     admin.set_password(data['password'])
     db.session.add(admin)
     db.session.commit()
@@ -97,6 +113,21 @@ def update_admin(current_admin, admin_id):
         err = validate_password(data['password'])
         if err: return err
         admin.set_password(data['password'])
+
+    if 'role' in data:
+        if data['role'] not in ('admin', 'editor'):
+            return jsonify({'message': 'Role must be admin or editor'}), 400
+        if data['role'] == 'admin' and not current_admin.is_super_admin:
+            return jsonify({'message': 'Only super_admin can assign admin role'}), 403
+        admin.role = data['role']
+
+    if 'package_id' in data:
+        if not current_admin.is_super_admin:
+            return jsonify({'message': 'Only super_admin can change package'}), 403
+        package = Package.query.get(data['package_id'])
+        if not package:
+            return jsonify({'message': 'Package not found'}), 400
+        admin.package_id = package.id
 
     db.session.commit()
     return jsonify(admin.to_dict()), 200
