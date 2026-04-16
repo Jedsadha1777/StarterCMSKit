@@ -11,14 +11,16 @@ class User(PasswordMixin, db.Model):
     name = db.Column(db.String(100), nullable=False, default='')
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
+    company_id = db.Column(db.Integer, db.ForeignKey('companies.id', ondelete='SET NULL'), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
-    
+
     def to_dict(self):
         return {
             'id': self.public_id,
             'name': self.name,
             'email': self.email,
+            'company_name': self.company.name if self.company else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }

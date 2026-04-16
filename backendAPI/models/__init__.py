@@ -6,6 +6,7 @@
 # error but the value may be stored with a "+00:00" suffix, causing silent
 # comparison failures with naive values already in the database.
 
+from .company import Company
 from .admin import Admin, AdminRole
 from .user import User
 from .article import Article
@@ -18,5 +19,5 @@ from .customer import Customer
 from .import_history import ImportHistory
 from .inspection_item import InspectionItem
 
-__all__ = ['Admin', 'AdminRole', 'User', 'Article', 'TokenBlacklist', 'Summary', 'AdminSession', 'Setting',
+__all__ = ['Company', 'Admin', 'AdminRole', 'User', 'Article', 'TokenBlacklist', 'Summary', 'AdminSession', 'Setting',
            'Package', 'PackageLimit', 'PackageRolePermission', 'Customer', 'ImportHistory', 'InspectionItem']

@@ -11,7 +11,8 @@
         </v-avatar>
         <div>
           <div class="text-h6">{{ admin.name }}</div>
-          <div class="text-body-2 text-grey">{{ admin.email }} &middot; ID: {{ admin.id }}</div>
+          <div class="text-body-2 text-grey">{{ admin.email }}</div>
+          <div v-if="admin.company_name" class="text-body-2 text-grey"><v-icon size="small" class="mr-1">mdi-domain</v-icon>{{ admin.company_name }}</div>
         </div>
       </div>
 

@@ -10,10 +10,11 @@ from datetime import datetime
 @user_bp.route('/articles', methods=['GET'])
 @jwt_required()
 @user_required
-def get_articles(_):
-    """Get all articles"""
-
+def get_articles(user):
     query = Article.query.options(joinedload(Article.admin_author)).filter_by(is_deleted=False, status='published')
+
+    if user.company_id:
+        query = query.filter(Article.company_id == user.company_id)
 
     # filters
     filters = {
@@ -40,7 +41,9 @@ def get_articles(_):
 @user_bp.route('/articles/<article_id>', methods=['GET'])
 @jwt_required()
 @user_required
-def get_article(_, article_id):
+def get_article(user, article_id):
     article, err = get_or_404(Article, article_id, is_deleted=False, status='published')
     if err: return err
+    if user.company_id and article.company_id != user.company_id:
+        return jsonify({'message': 'Article not found'}), 404
     return jsonify(article.to_dict()), 200

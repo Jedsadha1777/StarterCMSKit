@@ -11,6 +11,23 @@
 
         <v-spacer />
 
+        <v-select
+          v-if="showCompanySelect"
+          v-model="activeCompanyId"
+          :items="companies"
+          item-title="name"
+          item-value="id"
+          variant="outlined"
+          density="compact"
+          hide-details
+          style="max-width: 220px"
+          class="mr-3"
+          @update:model-value="handleCompanyChange"
+        />
+        <span v-else-if="admin.company_name" class="text-body-2 text-grey mr-3">
+          <v-icon size="small" class="mr-1">mdi-domain</v-icon>{{ admin.company_name }}
+        </span>
+
         <v-btn variant="text" class="text-none mr-2" to="/profile">
           <v-avatar size="32" class="mr-2">
             <v-icon color="grey-darken-1" size="32">mdi-account-circle</v-icon>
@@ -124,9 +141,15 @@ export default {
     const siteTitle = computed(() => settings.site_title || 'Admin Panel')
     const siteLogoUrl = computed(() => logoUrl())
 
-    const { admin, can: hasPermission, sync: syncAdminInfo } = useAdmin()
+    const { admin, companies, activeCompanyId, setActiveCompany, can: hasPermission, sync: syncAdminInfo } = useAdmin()
     const adminName = computed(() => admin.name || '')
     const adminEmail = computed(() => admin.email || 'admin')
+    const showCompanySelect = computed(() => admin.is_super_admin && companies.value.length > 0)
+
+    const handleCompanyChange = (id) => {
+      setActiveCompany(id)
+      window.location.reload()
+    }
 
     const allNavItems = [
       { to: '/',          icon: 'mdi-view-dashboard',  title: 'Dashboard',  match: '/' },
@@ -187,6 +210,8 @@ export default {
           sessionStorage.removeItem('access_token')
           localStorage.removeItem('refresh_token')
           localStorage.removeItem('admin')
+          localStorage.removeItem('companies')
+          localStorage.removeItem('active_company_id')
           router.push('/login')
         })
         eventSource.onopen = () => { stopPolling() }
@@ -253,7 +278,7 @@ export default {
       window.removeEventListener('auth-changed', syncAuthState)
     })
 
-    return { isAuthenticated, siteTitle, siteLogoUrl, defaultLogo, adminName, adminEmail, navItems, isActive, doLogout, sessionReplaced, hasPermission }
+    return { isAuthenticated, siteTitle, siteLogoUrl, defaultLogo, admin, adminName, adminEmail, companies, activeCompanyId, showCompanySelect, handleCompanyChange, navItems, isActive, doLogout, sessionReplaced, hasPermission }
   }
 }
 </script>

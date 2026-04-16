@@ -22,7 +22,7 @@ def create_app():
              r"/admin-api/*": {
                  "origins": allowed_origins,
                  "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                 "allow_headers": ["Content-Type", "Authorization"],
+                 "allow_headers": ["Content-Type", "Authorization", "X-Company-Id"],
                  "supports_credentials": True,
                  "max_age": 3600
              },
@@ -42,7 +42,8 @@ def create_app():
         raise RuntimeError('DATABASE_URL must be set in environment variables')
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-    app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5 MB upload limit
+    from config import MAX_UPLOAD_BYTES
+    app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_BYTES
     secret_key = os.getenv('SECRET_KEY')
     jwt_secret = os.getenv('JWT_SECRET_KEY')
     if not secret_key or not jwt_secret:
@@ -66,7 +67,7 @@ def create_app():
     app.register_blueprint(user_bp)
     
     # Import models to ensure they are registered with SQLAlchemy
-    from models import Admin, User, Article, TokenBlacklist, Summary, AdminSession, Setting, Customer, ImportHistory, InspectionItem
+    from models import Company, Admin, User, Article, TokenBlacklist, Summary, AdminSession, Setting, Customer, ImportHistory, InspectionItem
     
     @app.route('/')
     def index():

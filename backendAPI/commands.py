@@ -10,10 +10,11 @@ def register_commands(app):
     @click.option('--name',     default='Admin',           help='Admin name')
     @click.option('--email',    default='admin',           help='Admin email')
     @click.option('--password', default='admin',           help='Admin password')
-    @click.option('--role',     default='super_admin',     help='Admin role: super_admin | admin | editor')
-    def seed(name, email, password, role):
+    @click.option('--role',     default='admin',           help='Admin role: admin | editor')
+    @click.option('--root',     is_flag=True,              help='Place admin in root company (super_admin)')
+    def seed(name, email, password, role, root):
         """Seed initial admin user and default settings."""
-        from models import Admin, Setting
+        from models import Admin, Company, Setting
         from models.admin import AdminRole
 
         # --- Admin ---
@@ -23,13 +24,20 @@ def register_commands(app):
             try:
                 admin_role = AdminRole(role)
             except ValueError:
-                click.echo(f'Invalid role "{role}". Use: super_admin, admin, editor')
+                click.echo(f'Invalid role "{role}". Use: admin, editor')
                 return
-            admin = Admin(name=name, email=email, role=admin_role)
+
+            if root:
+                company = Company.query.filter_by(parent_id=0).first()
+            else:
+                company = Company.query.filter(Company.parent_id > 0).first()
+
+            admin = Admin(name=name, email=email, role=admin_role, company_id=company.id if company else None)
             admin.set_password(password)
             db.session.add(admin)
             db.session.commit()
-            click.echo(f'Admin created — name: {name}, email: {email}, role: {role}')
+            company_name = company.name if company else 'None'
+            click.echo(f'Admin created — name: {name}, email: {email}, role: {role}, company: {company_name}')
 
         # --- Settings ---
         seeded = 0

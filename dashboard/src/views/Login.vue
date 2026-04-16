@@ -76,7 +76,7 @@ export default {
   setup() {
     const router = useRouter()
     const { settings, loadSettings } = useSiteSettings()
-    const { save: saveAdmin } = useAdmin()
+    const { save: saveAdmin, saveCompanies } = useAdmin()
     const defaultLogo = defaultLogoImg
     const savedTitle = computed(() => settings.site_title || 'Admin Panel')
     const savedLogo = computed(() => settings.logo ? API_BASE + settings.logo : '')
@@ -93,7 +93,8 @@ export default {
         const { data } = await api.login(email.value, password.value)
         sessionStorage.setItem('access_token', data.access_token)
         localStorage.setItem('refresh_token', data.refresh_token)
-        saveAdmin(data.admin)           // เก็บเฉพาะ name/email ลง localStorage (D1)
+        saveAdmin(data.admin)
+        saveCompanies(data.companies || [])
         window.dispatchEvent(new Event('auth-changed'))  // แจ้ง App.vue ให้ sync isAuthenticated
         await loadSettings()
         router.push('/')

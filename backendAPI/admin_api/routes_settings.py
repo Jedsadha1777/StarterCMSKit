@@ -7,9 +7,7 @@ from extensions import db
 from models import Setting
 from decorators import admin_required
 
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'uploads')
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'svg', 'ico', 'webp'}
-MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5 MB
+from config import UPLOAD_DIR, ALLOWED_IMAGE_EXTENSIONS as ALLOWED_EXTENSIONS, MAX_UPLOAD_BYTES
 
 # Magic byte signatures for supported binary image formats
 _IMAGE_MAGIC = {

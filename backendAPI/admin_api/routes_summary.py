@@ -1,22 +1,20 @@
-from flask import jsonify
+from flask import jsonify, g
 from flask_jwt_extended import jwt_required
 from admin_api import admin_bp
-from models import Summary
-from decorators import admin_required
+from models import Customer, InspectionItem, Article, User, Admin
+from decorators import admin_required, company_required
 
 
 @admin_bp.route('/summary', methods=['GET'])
 @jwt_required()
 @admin_required
+@company_required
 def get_summary(admin):
-    """Get dashboard summary counts from pre-computed summary table."""
-    rows = Summary.query.all()
-    counts = {row.table_name: row.row_count for row in rows}
-
+    company_id = g.active_company.id
     return jsonify({
-        'articles': counts.get('articles', 0),
-        'users': counts.get('users', 0),
-        'admins': counts.get('admins', 0),
-        'customers': counts.get('customers', 0),
-        'inspection_items': counts.get('inspection_items', 0),
+        'articles': Article.query.filter_by(company_id=company_id).count(),
+        'users': User.query.filter_by(company_id=company_id).count(),
+        'admins': Admin.query.filter_by(company_id=company_id).count(),
+        'customers': Customer.query.filter_by(company_id=company_id).count(),
+        'inspection_items': InspectionItem.query.filter_by(company_id=company_id).count(),
     }), 200

@@ -89,6 +89,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       subtitle: Text(user?.email ?? 'Loading...'),
                       contentPadding: EdgeInsets.zero,
                     ),
+                    if (user?.companyName.isNotEmpty == true)
+                      ListTile(
+                        leading: const Icon(Icons.business),
+                        title: const Text('Company'),
+                        subtitle: Text(user!.companyName),
+                        contentPadding: EdgeInsets.zero,
+                      ),
                     ListTile(
                       leading: const Icon(Icons.badge),
                       title: const Text('User ID'),

@@ -39,9 +39,14 @@ def sync(user):
     #   published + deleted      → deleted  (client removes)
     #   draft (any delete state) → excluded (client never knew about it)
     # Using status == 'published' covers both cases without leaking drafts.
-    articles = Article.query \
+    query = Article.query \
         .filter(Article.updated_at > since) \
-        .filter(Article.status == 'published') \
+        .filter(Article.status == 'published')
+
+    if user.company_id:
+        query = query.filter(Article.company_id == user.company_id)
+
+    articles = query \
         .order_by(Article.updated_at.asc()) \
         .limit(SYNC_PAGE_SIZE + 1) \
         .all()

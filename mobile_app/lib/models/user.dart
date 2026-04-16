@@ -2,6 +2,7 @@ class User {
   final String id;
   final String name;
   final String email;
+  final String companyName;
   final String createdAt;
   final String updatedAt;
 
@@ -9,6 +10,7 @@ class User {
     required this.id,
     required this.name,
     required this.email,
+    this.companyName = '',
     required this.createdAt,
     required this.updatedAt,
   });
@@ -18,6 +20,7 @@ class User {
       id: json['id'].toString(),
       name: json['name'] ?? '',
       email: json['email'] ?? '',
+      companyName: json['company_name'] ?? '',
       createdAt: json['created_at'] ?? '',
       updatedAt: json['updated_at'] ?? '',
     );
@@ -27,6 +30,7 @@ class User {
         'id': id,
         'name': name,
         'email': email,
+        'company_name': companyName,
         'created_at': createdAt,
         'updated_at': updatedAt,
       };

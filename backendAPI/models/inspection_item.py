@@ -8,9 +8,10 @@ class InspectionItem(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     public_id = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid4()))
-    item_code = db.Column(db.String(50), unique=True, nullable=False)
+    item_code = db.Column(db.String(50), nullable=False)
     item_name = db.Column(db.String(200), nullable=False)
     spec = db.Column(db.String(255), nullable=True)
+    company_id = db.Column(db.Integer, db.ForeignKey('companies.id', ondelete='CASCADE'), nullable=True, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('admins.id', ondelete='SET NULL'), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))

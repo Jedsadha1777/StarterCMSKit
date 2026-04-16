@@ -7,16 +7,15 @@ from user_api import user_bp
 from extensions import db, limiter
 from models import User, TokenBlacklist
 from decorators import user_required
-from utils import validate_required, validate_password, blacklist_tokens
+from utils import load_schema, blacklist_tokens
+from schemas import LoginSchema, ChangePasswordSchema, UserResponseSchema
 from datetime import datetime, timezone
 
 
 @user_bp.route('/login', methods=['POST'])
 @limiter.limit("5 per minute")
 def login():
-    data = request.get_json(silent=True)
-
-    err = validate_required(data, ['email', 'password'])
+    data, err = load_schema(LoginSchema)
     if err: return err
 
     user = User.query.filter_by(email=data['email']).first()
@@ -27,10 +26,14 @@ def login():
     access_token = create_access_token(identity=user.public_id, additional_claims=additional_claims)
     refresh_token = create_refresh_token(identity=user.public_id, additional_claims=additional_claims)
 
+    user_data = UserResponseSchema().dump(user)
+    if user.company:
+        user_data['company'] = {'id': user.company.public_id, 'name': user.company.name}
+
     return jsonify({
         'access_token': access_token,
         'refresh_token': refresh_token,
-        'user': user.to_dict()
+        'user': user_data
     }), 200
 
 
@@ -81,23 +84,18 @@ def logout(user):
 @jwt_required()
 @user_required
 def get_profile(user):
-    return jsonify(user.to_dict()), 200
+    return jsonify(UserResponseSchema().dump(user)), 200
 
 
 @user_bp.route('/profile/change-password', methods=['PUT'])
 @jwt_required()
 @user_required
 def change_password(user):
-    data = request.get_json(silent=True)
-
-    err = validate_required(data, ['old_password', 'new_password'])
+    data, err = load_schema(ChangePasswordSchema)
     if err: return err
 
     if not user.check_password(data['old_password']):
         return jsonify({'message': 'Invalid old password'}), 401
-
-    err = validate_password(data['new_password'])
-    if err: return err
 
     user.set_password(data['new_password'])
 

@@ -15,6 +15,8 @@ export function clearAuthStorage() {
   sessionStorage.removeItem('access_token')
   localStorage.removeItem('refresh_token')
   localStorage.removeItem('admin')
+  localStorage.removeItem('companies')
+  localStorage.removeItem('active_company_id')
   window.dispatchEvent(new Event('auth-changed'))
 }
 
@@ -46,6 +48,10 @@ api.interceptors.request.use(
     const token = getAccessToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+    const companyId = localStorage.getItem('active_company_id')
+    if (companyId) {
+      config.headers['X-Company-Id'] = companyId
     }
     return config
   },
@@ -232,6 +238,26 @@ export default {
 
   getPackages() {
     return api.get('/packages')
+  },
+
+  getCompanies() {
+    return api.get('/companies')
+  },
+
+  getAccessibleCompanies() {
+    return api.get('/companies/accessible')
+  },
+
+  createCompany(data) {
+    return api.post('/companies', data)
+  },
+
+  updateCompany(id, data) {
+    return api.put(`/companies/${id}`, data)
+  },
+
+  deleteCompany(id) {
+    return api.delete(`/companies/${id}`)
   },
 
   getAdmins(params = {}) {

@@ -1,10 +1,11 @@
-from flask import request, jsonify
+from flask import request, jsonify, g
 from flask_jwt_extended import jwt_required
 from admin_api import admin_bp
 from extensions import db
-from models import Admin, AdminRole, Article, AdminSession, Package
-from decorators import admin_required
-from utils import paginate_query, apply_filters, apply_sorting, format_paginated, validate_required, validate_password, get_or_404, check_unique
+from models import Admin, Article, AdminSession, Package
+from decorators import admin_required, company_required
+from utils import paginate_query, apply_filters, apply_sorting, format_paginated, load_schema, get_or_404_scoped, check_unique
+from schemas import AdminCreateSchema, AdminUpdateSchema, AdminResponseSchema, PackageResponseSchema
 from session_cache import session_cache
 from datetime import datetime, timezone
 
@@ -14,16 +15,15 @@ from datetime import datetime, timezone
 @admin_required
 def get_packages(admin):
     packages = Package.query.order_by(Package.name).all()
-    return jsonify({'packages': [p.to_dict() for p in packages]}), 200
+    return jsonify({'packages': PackageResponseSchema().dump(packages, many=True)}), 200
 
 
 @admin_bp.route('/admins', methods=['GET'])
 @jwt_required()
 @admin_required
+@company_required
 def get_admins(current_admin):
-    query = Admin.query
-    if not current_admin.has_permission('super_admin', 'view'):
-        query = query.filter(Admin.role != AdminRole.SUPER_ADMIN)
+    query = Admin.query.filter(Admin.company_id == g.active_company.id)
 
     filters = {
         'name': {'type': 'fuzzy'},
@@ -35,72 +35,63 @@ def get_admins(current_admin):
     query = apply_sorting(query, Admin, sortable_fields=['name', 'email', 'created_at'], default_sort='-created_at')
     result = paginate_query(query, default_per_page=10)
 
-    return format_paginated('admins', result)
+    return format_paginated('admins', result, schema=AdminResponseSchema())
 
 
 @admin_bp.route('/admins', methods=['POST'])
 @jwt_required()
 @admin_required
+@company_required
 def create_admin(current_admin):
     if not current_admin.has_permission('admins', 'create'):
         return jsonify({'message': 'Permission denied'}), 403
 
-    data = request.get_json()
-
-    err = validate_required(data, ['name', 'email', 'password', 'role', 'package_id'])
+    data, err = load_schema(AdminCreateSchema)
     if err: return err
 
-    err = check_unique(Admin, 'name', data['name'])
+    err = check_unique(Admin, 'name', data['name'], company_id=g.active_company.id)
     if err: return err
 
     err = check_unique(Admin, 'email', data['email'])
     if err: return err
 
-    err = validate_password(data['password'])
-    if err: return err
-
-    role = data.get('role')
-    if role not in ('admin', 'editor'):
-        return jsonify({'message': 'Role must be admin or editor'}), 400
-
-    if role == 'admin' and not current_admin.is_super_admin:
+    if data['role'] == 'admin' and not current_admin.is_super_admin:
         return jsonify({'message': 'Only super_admin can create admin role'}), 403
 
-    package = Package.query.get(data['package_id'])
-    if not package:
-        return jsonify({'message': 'Package not found. Please configure a package first.'}), 400
-
-    admin = Admin(name=data['name'], email=data['email'], role=role, package_id=package.id)
+    admin = Admin(name=data['name'], email=data['email'], role=data['role'], company_id=g.active_company.id)
     admin.set_password(data['password'])
     db.session.add(admin)
     db.session.commit()
 
-    return jsonify(admin.to_dict()), 201
+    return jsonify(AdminResponseSchema().dump(admin)), 201
 
 
 @admin_bp.route('/admins/<admin_id>', methods=['GET'])
 @jwt_required()
 @admin_required
+@company_required
 def get_admin(current_admin, admin_id):
-    admin, err = get_or_404(Admin, admin_id)
+    admin, err = get_or_404_scoped(Admin, admin_id, g.active_company)
     if err: return err
-    return jsonify(admin.to_dict()), 200
+    return jsonify(AdminResponseSchema().dump(admin)), 200
 
 
 @admin_bp.route('/admins/<admin_id>', methods=['PUT'])
 @jwt_required()
 @admin_required
+@company_required
 def update_admin(current_admin, admin_id):
     if not current_admin.has_permission('admins', 'edit'):
         return jsonify({'message': 'Permission denied'}), 403
 
-    admin, err = get_or_404(Admin, admin_id)
+    admin, err = get_or_404_scoped(Admin, admin_id, g.active_company)
     if err: return err
 
-    data = request.get_json()
+    data, err = load_schema(AdminUpdateSchema)
+    if err: return err
 
     if data.get('name'):
-        err = check_unique(Admin, 'name', data['name'], exclude_id=admin.id)
+        err = check_unique(Admin, 'name', data['name'], exclude_id=admin.id, company_id=g.active_company.id)
         if err: return err
         admin.name = data['name']
 
@@ -110,37 +101,26 @@ def update_admin(current_admin, admin_id):
         admin.email = data['email']
 
     if data.get('password'):
-        err = validate_password(data['password'])
-        if err: return err
         admin.set_password(data['password'])
 
-    if 'role' in data:
-        if data['role'] not in ('admin', 'editor'):
-            return jsonify({'message': 'Role must be admin or editor'}), 400
+    if data.get('role'):
         if data['role'] == 'admin' and not current_admin.is_super_admin:
             return jsonify({'message': 'Only super_admin can assign admin role'}), 403
         admin.role = data['role']
 
-    if 'package_id' in data:
-        if not current_admin.is_super_admin:
-            return jsonify({'message': 'Only super_admin can change package'}), 403
-        package = Package.query.get(data['package_id'])
-        if not package:
-            return jsonify({'message': 'Package not found'}), 400
-        admin.package_id = package.id
-
     db.session.commit()
-    return jsonify(admin.to_dict()), 200
+    return jsonify(AdminResponseSchema().dump(admin)), 200
 
 
 @admin_bp.route('/admins/<admin_id>', methods=['DELETE'])
 @jwt_required()
 @admin_required
+@company_required
 def delete_admin(current_admin, admin_id):
     if not current_admin.has_permission('admins', 'delete'):
         return jsonify({'message': 'Permission denied'}), 403
 
-    admin, err = get_or_404(Admin, admin_id)
+    admin, err = get_or_404_scoped(Admin, admin_id, g.active_company)
     if err: return err
 
     if current_admin.id == admin.id:
@@ -159,10 +139,9 @@ def delete_admin(current_admin, admin_id):
 @jwt_required()
 @admin_required
 def delete_own_account(admin):
-    data = request.get_json()
-
-    err = validate_required(data, ['password'])
-    if err: return err
+    data = request.get_json(silent=True)
+    if not data or not data.get('password'):
+        return jsonify({'message': 'password is required'}), 400
 
     if not admin.check_password(data['password']):
         return jsonify({'message': 'Invalid password'}), 401

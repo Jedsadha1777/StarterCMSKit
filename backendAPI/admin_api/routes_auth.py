@@ -14,9 +14,10 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask_jwt_extended.exceptions import JWTDecodeError
 from admin_api import admin_bp
 from extensions import db, limiter
-from models import Admin, AdminSession
+from models import Admin, AdminSession, Company
 from decorators import admin_required
-from utils import validate_required, validate_password
+from utils import load_schema
+from schemas import LoginSchema, ProfileUpdateSchema, ChangePasswordSchema, AdminResponseSchema
 from session_cache import session_cache
 from sse_manager import sse_manager
 
@@ -100,9 +101,7 @@ def _decode_admin_jwt(allow_expired=False):
 @limiter.limit("5 per minute")
 def login():
     """Admin login — single session enforcement with grace period."""
-    data = request.get_json(silent=True)
-
-    err = validate_required(data, ['email', 'password'])
+    data, err = load_schema(LoginSchema)
     if err: return err
 
     admin = Admin.query.filter_by(email=data['email']).first()
@@ -167,11 +166,17 @@ def login():
 
     access_token = _make_access_token(admin, new_session)
 
+    if admin.company and admin.company.parent_id == 0:
+        accessible = Company.query.filter_by(parent_id=admin.company.id).order_by(Company.name).all()
+    else:
+        accessible = [admin.company] if admin.company else []
+
     response = {
         'access_token': access_token,
         'refresh_token': raw_refresh,
-        'admin': admin.to_dict(include_permissions=True),
+        'admin': {**AdminResponseSchema().dump(admin), 'permissions': admin.get_permissions(), 'limits': admin.get_limits()},
         'session': new_session.to_dict(),
+        'companies': [{'id': c.id, 'name': c.name} for c in accessible],
     }
     if replaced_info:
         response['replaced_session'] = {
@@ -324,9 +329,12 @@ def reset_password():
     if not admin:
         return jsonify({'code': 'INVALID_TOKEN', 'message': 'Invalid token'}), 400
 
-    err = validate_password(data['new_password'])
-    if err:
-        return err
+    from marshmallow import ValidationError as MarshmallowValidationError
+    from schemas import password_length
+    try:
+        password_length(data['new_password'])
+    except MarshmallowValidationError as ve:
+        return jsonify({'message': str(ve.messages[0]) if isinstance(ve.messages, list) else str(ve)}), 400
 
     admin.set_password(data['new_password'])
 
@@ -431,35 +439,38 @@ def check_session(admin):
 @admin_required
 def profile(admin):
     if request.method == 'GET':
-        return jsonify(admin.to_dict(include_permissions=True)), 200
+        result = AdminResponseSchema().dump(admin)
+        result['permissions'] = admin.get_permissions()
+        result['limits'] = admin.get_limits()
+        return jsonify(result), 200
 
-    data = request.get_json()
-    if not data or not data.get('name'):
-        return jsonify({'message': 'Name is required'}), 400
+    data, err = load_schema(ProfileUpdateSchema)
+    if err: return err
 
-    if Admin.query.filter(Admin.name == data['name'], Admin.id != admin.id).first():
+    name_query = Admin.query.filter(Admin.name == data['name'], Admin.id != admin.id)
+    if admin.company_id:
+        name_query = name_query.filter(Admin.company_id == admin.company_id)
+    if name_query.first():
         return jsonify({'message': 'Name already taken'}), 400
 
     admin.name = data['name']
     db.session.commit()
 
-    return jsonify(admin.to_dict(include_permissions=True)), 200
+    result = AdminResponseSchema().dump(admin)
+    result['permissions'] = admin.get_permissions()
+    result['limits'] = admin.get_limits()
+    return jsonify(result), 200
 
 
 @admin_bp.route('/profile/change-password', methods=['PUT'])
 @jwt_required()
 @admin_required
 def change_password(admin):
-    data = request.get_json()
-
-    err = validate_required(data, ['old_password', 'new_password'])
+    data, err = load_schema(ChangePasswordSchema)
     if err: return err
 
     if not admin.check_password(data['old_password']):
         return jsonify({'message': 'Invalid old password'}), 401
-
-    err = validate_password(data['new_password'])
-    if err: return err
 
     admin.set_password(data['new_password'])
 

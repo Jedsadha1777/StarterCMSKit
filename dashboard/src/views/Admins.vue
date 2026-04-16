@@ -46,6 +46,7 @@ export default {
     const columns = [
       { key: 'name', label: 'Name', sortable: true },
       { key: 'email', label: 'Email', sortable: true, link: true },
+      { key: 'company_name', label: 'Company' },
       { key: 'created_at', label: 'Created', sortable: true, width: '140px', nowrap: true },
     ]
 

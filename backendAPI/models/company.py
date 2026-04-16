@@ -3,29 +3,32 @@ from extensions import db
 from datetime import datetime, timezone
 
 
-class Customer(db.Model):
-    __tablename__ = 'customers'
+class Company(db.Model):
+    __tablename__ = 'companies'
 
     id = db.Column(db.Integer, primary_key=True)
     public_id = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid4()))
-    customer_id = db.Column(db.String(50), nullable=False)
     name = db.Column(db.String(200), nullable=False)
-    address = db.Column(db.Text, nullable=True)
-    company_id = db.Column(db.Integer, db.ForeignKey('companies.id', ondelete='CASCADE'), nullable=True, index=True)
-    created_by = db.Column(db.Integer, db.ForeignKey('admins.id', ondelete='SET NULL'), nullable=True, index=True)
+    parent_id = db.Column(db.Integer, nullable=False, default=0)
+    package_id = db.Column(db.Integer, db.ForeignKey('packages.id', ondelete='SET NULL'), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
-    creator = db.relationship('Admin', backref='customers', lazy=True, foreign_keys=[created_by])
+    package = db.relationship('Package', backref='companies')
+    admins = db.relationship('Admin', backref='company', lazy=True)
+    users = db.relationship('User', backref='company', lazy=True)
+
+    @property
+    def is_root(self):
+        return self.parent_id == 0
 
     def to_dict(self):
         return {
             'id': self.public_id,
-            'customer_id': self.customer_id,
             'name': self.name,
-            'address': self.address,
-            'created_by': self.creator.public_id if self.creator else None,
-            'created_by_name': self.creator.name if self.creator else None,
+            'parent_id': self.parent_id,
+            'package_id': self.package_id,
+            'is_root': self.is_root,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }

@@ -7,9 +7,9 @@
 
 from functools import wraps
 from datetime import datetime, timezone
-from flask import jsonify
+from flask import jsonify, request, g
 from flask_jwt_extended import get_jwt_identity, get_jwt
-from models import Admin, User
+from models import Admin, User, Company
 from session_cache import session_cache
 
 
@@ -60,6 +60,25 @@ def _validate_admin_session(session_id, admin_internal_id):
     return data, None
 
 
+def _resolve_active_company(admin):
+    """Resolve active company from X-Company-Id header.
+    Root admin: uses the company specified in the header (must be a child).
+    Tenant admin: always uses their own company (ignores header).
+    """
+    if not admin.company:
+        return None
+
+    if admin.company.parent_id == 0:
+        company_id = request.headers.get('X-Company-Id', type=int)
+        if company_id:
+            company = Company.query.filter_by(id=company_id).first()
+            if company and company.parent_id == admin.company.id:
+                return company
+        return None
+    else:
+        return admin.company
+
+
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -88,7 +107,18 @@ def admin_required(f):
                 msg = 'Session has been revoked'
             return jsonify({'code': error_code, 'message': msg}), 401
 
+        g.active_company = _resolve_active_company(admin)
+
         return f(admin, *args, **kwargs)
+    return decorated_function
+
+
+def company_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not g.active_company:
+            return jsonify({'message': 'Please select a company first'}), 400
+        return f(*args, **kwargs)
     return decorated_function
 
 

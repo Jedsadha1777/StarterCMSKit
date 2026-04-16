@@ -1,13 +1,29 @@
 import re
 import logging
 from flask import request, jsonify
+from marshmallow import ValidationError
 from sqlalchemy import or_, and_
 from extensions import db
 
 logger = logging.getLogger(__name__)
 
 
-# ── Validation ──
+# ── Schema validation ──
+
+def load_schema(schema_class, data=None):
+    if data is None:
+        data = request.get_json(silent=True)
+    if not data:
+        return None, (jsonify({'message': 'No data provided'}), 400)
+    try:
+        return schema_class().load(data), None
+    except ValidationError as err:
+        first_field = next(iter(err.messages))
+        first_msg = err.messages[first_field][0]
+        return None, (jsonify({'message': f'{first_field}: {first_msg}', 'errors': err.messages}), 400)
+
+
+# ── Legacy validation (kept for routes not yet migrated) ──
 
 def validate_required(data, fields):
     if not data:
@@ -37,9 +53,18 @@ def get_or_404(model, public_id, label=None, **extra_filters):
     query = model.query.filter_by(public_id=public_id, **extra_filters)
     resource = query.first()
     if not resource:
-        # Derive a readable label from the table name by stripping a trailing 's'.
-        # Using [:-1] (remove exactly the last char) is safer than rstrip('s')
-        # which would strip all trailing 's' chars (e.g. 'admins' → 'admi').
+        tablename = model.__tablename__
+        singular = tablename[:-1] if tablename.endswith('s') else tablename
+        name = label or singular.capitalize()
+        return None, (jsonify({'message': f'{name} not found'}), 404)
+    return resource, None
+
+
+def get_or_404_scoped(model, public_id, active_company, label=None, **extra_filters):
+    resource, err = get_or_404(model, public_id, label=label, **extra_filters)
+    if err:
+        return None, err
+    if active_company and hasattr(resource, 'company_id') and resource.company_id != active_company.id:
         tablename = model.__tablename__
         singular = tablename[:-1] if tablename.endswith('s') else tablename
         name = label or singular.capitalize()
@@ -49,11 +74,13 @@ def get_or_404(model, public_id, label=None, **extra_filters):
 
 # ── Uniqueness check ──
 
-def check_unique(model, field, value, exclude_id=None):
+def check_unique(model, field, value, exclude_id=None, company_id=None):
     column = getattr(model, field)
     query = model.query.filter(column == value)
     if exclude_id is not None:
         query = query.filter(model.id != exclude_id)
+    if company_id is not None and hasattr(model, 'company_id'):
+        query = query.filter(model.company_id == company_id)
     if query.first():
         label = field.replace('_', ' ').capitalize()
         return jsonify({'message': f'{label} already exists'}), 400
@@ -62,9 +89,10 @@ def check_unique(model, field, value, exclude_id=None):
 
 # ── Paginated response ──
 
-def format_paginated(key, result):
+def format_paginated(key, result, schema=None):
+    items = schema.dump(result['items'], many=True) if schema else [item.to_dict() for item in result['items']]
     return jsonify({
-        key: [item.to_dict() for item in result['items']],
+        key: items,
         'total': result['total'],
         'page': result['page'],
         'per_page': result['per_page'],
