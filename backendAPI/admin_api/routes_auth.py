@@ -23,11 +23,9 @@ from sse_manager import sse_manager
 
 logger = logging.getLogger(__name__)
 
-RESET_TOKEN_MAX_AGE = 3600  # 1 hour
-
-GRACE_SECONDS = 30
-REUSE_GRACE_SECONDS = 30
-SSE_TICKET_TTL = 30
+from config import (RESET_TOKEN_MAX_AGE, GRACE_SECONDS, REUSE_GRACE_SECONDS, SSE_TICKET_TTL,
+                     RATE_LIMIT_LOGIN, RATE_LIMIT_FORGOT_PASSWORD, RATE_LIMIT_RESET_PASSWORD,
+                     SSE_HEARTBEAT_INTERVAL, USER_AGENT_MAX_LENGTH)
 
 
 # In-memory store for SSE one-time tickets (protected by lock for thread safety)
@@ -98,7 +96,7 @@ def _decode_admin_jwt(allow_expired=False):
 
 
 @admin_bp.route('/login', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit(RATE_LIMIT_LOGIN)
 def login():
     """Admin login — single session enforcement with grace period."""
     data, err = load_schema(LoginSchema)
@@ -109,7 +107,7 @@ def login():
         return jsonify({'code': 'INVALID_CREDENTIALS', 'message': 'Invalid email or password'}), 401
 
     ip = request.remote_addr
-    ua = request.headers.get('User-Agent', '')[:255]
+    ua = request.headers.get('User-Agent', '')[:USER_AGENT_MAX_LENGTH]
 
     old_sessions = AdminSession.query \
         .filter_by(admin_id=admin.id, status='active') \
@@ -297,7 +295,7 @@ def logout(admin):
 
 
 @admin_bp.route('/forgot-password', methods=['POST'])
-@limiter.limit("3 per minute")
+@limiter.limit(RATE_LIMIT_FORGOT_PASSWORD)
 def forgot_password():
     data = request.get_json(silent=True)
     if not data or not data.get('email'):
@@ -315,7 +313,7 @@ def forgot_password():
 
 
 @admin_bp.route('/reset-password', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit(RATE_LIMIT_RESET_PASSWORD)
 def reset_password():
     data = request.get_json(silent=True)
     if not data or not data.get('token') or not data.get('new_password'):
@@ -392,7 +390,7 @@ def session_stream():
         try:
             while True:
                 try:
-                    msg = q.get(timeout=25)
+                    msg = q.get(timeout=SSE_HEARTBEAT_INTERVAL)
                     yield f"event: {msg['type']}\ndata: {json.dumps(msg['data'], ensure_ascii=False)}\n\n"
                 except queue.Empty:
                     yield ": heartbeat\n\n"

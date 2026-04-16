@@ -4,8 +4,7 @@ from flask_jwt_extended import jwt_required
 from user_api import user_bp
 from models import Article
 from decorators import user_required
-
-SYNC_PAGE_SIZE = 100
+from config import SYNC_PAGE_SIZE
 
 
 def _parse_since(value):

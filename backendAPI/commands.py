@@ -71,7 +71,8 @@ def register_commands(app):
     def cleanup():
         """Clean up expired sessions and blacklist entries."""
         from models import AdminSession, TokenBlacklist
-        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=7)
+        from config import CLEANUP_CUTOFF_DAYS
+        cutoff = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=CLEANUP_CUTOFF_DAYS)
 
         count = AdminSession.query.filter(
             AdminSession.status == 'revoked',

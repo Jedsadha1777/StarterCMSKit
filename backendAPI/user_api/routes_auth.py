@@ -10,10 +10,11 @@ from decorators import user_required
 from utils import load_schema, blacklist_tokens
 from schemas import LoginSchema, ChangePasswordSchema, UserResponseSchema
 from datetime import datetime, timezone
+from config import RATE_LIMIT_LOGIN
 
 
 @user_bp.route('/login', methods=['POST'])
-@limiter.limit("5 per minute")
+@limiter.limit(RATE_LIMIT_LOGIN)
 def login():
     data, err = load_schema(LoginSchema)
     if err: return err
