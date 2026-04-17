@@ -56,7 +56,7 @@ def create_admin(current_admin):
     if err: return err
 
     if data['role'] == 'admin' and not current_admin.is_super_admin:
-        return jsonify({'message': 'Only super_admin can create admin role'}), 403
+        return jsonify({'message': 'Only root admin can create admin role'}), 403
 
     admin = Admin(name=data['name'], email=data['email'], role=data['role'], company_id=g.active_company.id)
     admin.set_password(data['password'])
@@ -105,7 +105,7 @@ def update_admin(current_admin, admin_id):
 
     if data.get('role'):
         if data['role'] == 'admin' and not current_admin.is_super_admin:
-            return jsonify({'message': 'Only super_admin can assign admin role'}), 403
+            return jsonify({'message': 'Only root admin can assign admin role'}), 403
         admin.role = data['role']
 
     db.session.commit()

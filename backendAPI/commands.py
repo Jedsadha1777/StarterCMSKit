@@ -11,7 +11,7 @@ def register_commands(app):
     @click.option('--email',    default='admin',           help='Admin email')
     @click.option('--password', default='admin',           help='Admin password')
     @click.option('--role',     default='admin',           help='Admin role: admin | editor')
-    @click.option('--root',     is_flag=True,              help='Place admin in root company (super_admin)')
+    @click.option('--root',     is_flag=True,              help='Place admin in root company')
     def seed(name, email, password, role, root):
         """Seed initial admin user and default settings."""
         from models import Admin, Company, Setting

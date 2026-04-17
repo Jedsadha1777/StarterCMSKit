@@ -24,7 +24,7 @@ from sse_manager import sse_manager
 logger = logging.getLogger(__name__)
 
 from config import (RESET_TOKEN_MAX_AGE, GRACE_SECONDS, REUSE_GRACE_SECONDS, SSE_TICKET_TTL,
-                     RATE_LIMIT_LOGIN, RATE_LIMIT_FORGOT_PASSWORD, RATE_LIMIT_RESET_PASSWORD,
+                     RATE_LIMIT_LOGIN, RATE_LIMIT_FORGOT_PASSWORD, RATE_LIMIT_RESET_PASSWORD, RATE_LIMIT_REFRESH,
                      SSE_HEARTBEAT_INTERVAL, USER_AGENT_MAX_LENGTH)
 
 
@@ -186,6 +186,7 @@ def login():
 
 
 @admin_bp.route('/refresh', methods=['POST'])
+@limiter.limit(RATE_LIMIT_REFRESH)
 def refresh():
     """Refresh — accepts expired access token (real credential is opaque refresh token)"""
     claims, err = _decode_admin_jwt(allow_expired=True)
@@ -212,6 +213,9 @@ def refresh():
     if not AdminSession.verify_token(raw_token, session.refresh_token_hash):
         return jsonify({'code': 'INVALID_TOKEN', 'message': 'Invalid refresh token'}), 401
 
+    if session.status == 'grace_period':
+        return jsonify({'code': 'SESSION_REPLACED', 'message': 'Session has been replaced'}), 401
+
     if not session.is_valid():
         return jsonify({'code': 'SESSION_REVOKED', 'message': 'Session has been revoked'}), 401
 
@@ -222,7 +226,7 @@ def refresh():
         if elapsed <= REUSE_GRACE_SECONDS:
             # Network retry — find latest unused session in this family and generate new refresh token for it
             latest = AdminSession.query.filter_by(
-                token_family=session.token_family, is_used=False
+                token_family=session.token_family, is_used=False, status='active'
             ).order_by(AdminSession.created_at.desc()).first()
 
             if latest:
@@ -238,10 +242,12 @@ def refresh():
                 }), 200
 
         # Theft detected — revoke entire family
-        AdminSession.query.filter_by(token_family=session.token_family).update({'status': 'revoked'})
+        family_sessions = AdminSession.query.filter_by(token_family=session.token_family).all()
+        for s in family_sessions:
+            s.status = 'revoked'
+            session_cache.invalidate(s.id)
         db.session.commit()
 
-        session_cache.invalidate(session.id)
         sse_manager.send(session.id, 'security_alert', {
             'code': 'TOKEN_REUSE_DETECTED',
             'message': 'Token reuse detected. All sessions have been revoked.',
@@ -395,7 +401,7 @@ def session_stream():
                 except queue.Empty:
                     yield ": heartbeat\n\n"
         finally:
-            sse_manager.disconnect(session_id)
+            sse_manager.disconnect(session_id, q)
 
     return Response(
         generate(),
@@ -468,7 +474,7 @@ def change_password(admin):
     if err: return err
 
     if not admin.check_password(data['old_password']):
-        return jsonify({'message': 'Invalid old password'}), 401
+        return jsonify({'code': 'INVALID_CREDENTIALS', 'message': 'Invalid old password'}), 401
 
     admin.set_password(data['new_password'])
 

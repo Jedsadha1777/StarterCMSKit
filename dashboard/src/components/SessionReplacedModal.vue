@@ -47,7 +47,6 @@ export default {
 
     const goToLogin = () => {
       stopCountdown()
-      localStorage.clear()
       emit('expired')
       router.push('/login')
     }

@@ -114,7 +114,7 @@
 <script>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import api from '../api'
+import api, { clearAuthStorage } from '../api'
 import PageBanner from '../components/PageBanner.vue'
 import { useAdmin } from '../composables/useAdmin'
 
@@ -170,7 +170,7 @@ export default {
       deleteLoading.value = true
       try {
         await api.deleteAccount(deletePassword.value)
-        localStorage.clear()
+        clearAuthStorage()
         router.push('/login')
       } catch (err) { deleteError.value = err.response?.data?.message || 'Failed' }
       finally { deleteLoading.value = false }

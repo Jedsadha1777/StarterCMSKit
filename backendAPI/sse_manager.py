@@ -3,7 +3,6 @@ import threading
 
 
 class SSEManager:
-    """Thread-safe in-memory SSE connection registry."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -15,9 +14,11 @@ class SSEManager:
             self._connections[session_id] = q
         return q
 
-    def disconnect(self, session_id):
+    def disconnect(self, session_id, q=None):
         with self._lock:
-            self._connections.pop(session_id, None)
+            current = self._connections.get(session_id)
+            if q is None or current is q:
+                self._connections.pop(session_id, None)
 
     def send(self, session_id, event_type, data):
         with self._lock:

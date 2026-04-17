@@ -11,50 +11,18 @@
 
           <v-form @submit.prevent="handleLogin">
             <div class="text-body-1 font-weight-medium mb-1">Username</div>
-            <v-text-field
-              v-model="email"
-              placeholder="admin"
-              variant="solo-filled"
-              flat
-              bg-color="grey-lighten-4"
-              required
-              class="mb-4"
-              hide-details
-            />
+            <v-text-field v-model="email" placeholder="admin" variant="solo-filled" flat bg-color="grey-lighten-4" required class="mb-4" hide-details />
 
             <div class="text-body-1 font-weight-medium mb-1">Password</div>
-            <v-text-field
-              v-model="password"
-              placeholder="Enter password"
-              variant="solo-filled"
-              flat
-              bg-color="grey-lighten-4"
-              :type="showPassword ? 'text' : 'password'"
-              required
-              hide-details
-            >
+            <v-text-field v-model="password" placeholder="Enter password" variant="solo-filled" flat bg-color="grey-lighten-4" :type="showPassword ? 'text' : 'password'" required hide-details>
               <template v-slot:append-inner>
-                <v-icon
-                  @click="showPassword = !showPassword"
-                  style="opacity:0.5;cursor:pointer"
-                >{{ showPassword ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>
+                <v-icon @click="showPassword = !showPassword" style="opacity:0.5;cursor:pointer">{{ showPassword ? 'mdi-eye-off' : 'mdi-eye' }}</v-icon>
               </template>
             </v-text-field>
 
             <p v-if="error" class="text-error text-body-2 mt-4">{{ error }}</p>
 
-            <v-btn
-              type="submit"
-              color="primary"
-              variant="flat"
-              block
-              size="x-large"
-              rounded="pill"
-              class="mt-8"
-              :loading="loading"
-            >
-              Log in
-            </v-btn>
+            <v-btn type="submit" color="primary" variant="flat" block size="x-large" rounded="pill" class="mt-8" :loading="loading">Log in</v-btn>
           </v-form>
         </v-card>
       </v-col>
@@ -69,7 +37,6 @@ import api from '../api'
 import { useSiteSettings } from '../composables/useSiteSettings'
 import { useAdmin } from '../composables/useAdmin'
 import defaultLogoImg from '@/assets/logo.png'
-
 import { API_BASE } from '../config'
 
 export default {
@@ -91,11 +58,11 @@ export default {
       loading.value = true
       try {
         const { data } = await api.login(email.value, password.value)
-        sessionStorage.setItem('access_token', data.access_token)
+        localStorage.setItem('access_token', data.access_token)
         localStorage.setItem('refresh_token', data.refresh_token)
         saveAdmin(data.admin)
         saveCompanies(data.companies || [])
-        window.dispatchEvent(new Event('auth-changed'))  // แจ้ง App.vue ให้ sync isAuthenticated
+        window.dispatchEvent(new Event('auth-login'))
         await loadSettings()
         router.push('/')
       } catch (err) {
