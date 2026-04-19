@@ -71,6 +71,22 @@
             <v-icon start>mdi-content-save</v-icon>Save Settings
           </v-btn>
         </div>
+
+        <!-- Report Settings (CC Email) -->
+        <div class="text-subtitle-1 font-weight-bold mb-2 mt-6">Report Settings</div>
+        <v-card variant="outlined" class="mb-6" style="border-width:thin;border-color:rgba(0,0,0,0.12)">
+          <v-card-text>
+            <v-text-field v-model="reportCcEmail" label="Report CC Email" variant="outlined" density="compact" hide-details hint="CC email for all report email notifications" persistent-hint />
+          </v-card-text>
+          <v-card-actions class="px-4 pb-4">
+            <v-spacer />
+            <p v-if="reportError" class="text-error text-body-2 mr-4">{{ reportError }}</p>
+            <p v-if="reportSuccess" class="text-success text-body-2 mr-4">{{ reportSuccess }}</p>
+            <v-btn color="success" variant="flat" :loading="savingReport" @click="saveReportSettings">
+              <v-icon start>mdi-content-save</v-icon>Save Report Settings
+            </v-btn>
+          </v-card-actions>
+        </v-card>
       </template>
     </v-container>
   </div>
@@ -157,9 +173,34 @@ export default {
       await api.updateSettings({ favicon: '' })
     }
 
-    onMounted(loadSettings)
+    // Report Settings (CC Email)
+    const reportCcEmail = ref('')
+    const savingReport = ref(false)
+    const reportError = ref('')
+    const reportSuccess = ref('')
 
-    return { apiBase, loadingPage, saving, error, success, form, dateFormats, save, uploadFile, removeLogo, removeFavicon }
+    const loadReportSettings = async () => {
+      try {
+        const { data } = await api.getReportSettings()
+        reportCcEmail.value = data.report_cc_email || ''
+      } catch { /* ignore — company may not have CC set */ }
+    }
+
+    const saveReportSettings = async () => {
+      reportError.value = ''; reportSuccess.value = ''; savingReport.value = true
+      try {
+        await api.updateReportSettings({ report_cc_email: reportCcEmail.value || null })
+        reportSuccess.value = 'Report settings saved'
+      } catch (err) { reportError.value = err.response?.data?.message || 'Failed to save' }
+      finally { savingReport.value = false }
+    }
+
+    onMounted(() => {
+      loadSettings()
+      loadReportSettings()
+    })
+
+    return { apiBase, loadingPage, saving, error, success, form, dateFormats, save, uploadFile, removeLogo, removeFavicon, reportCcEmail, savingReport, reportError, reportSuccess, saveReportSettings }
   }
 }
 </script>

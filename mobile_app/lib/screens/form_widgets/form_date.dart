@@ -43,11 +43,28 @@ class FormDate extends StatefulWidget {
 
 class _FormDateState extends State<FormDate> {
   String? _selected;
+  late final TextEditingController _ctrl;
 
   @override
   void initState() {
     super.initState();
     _selected = widget.value;
+    _ctrl = TextEditingController(text: _selected ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant FormDate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value && widget.value != _selected) {
+      _selected = widget.value;
+      _ctrl.text = _selected ?? '';
+    }
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
   }
 
   DateTime? _parseDate(String? s) {
@@ -72,7 +89,10 @@ class _FormDateState extends State<FormDate> {
 
     if (picked != null) {
       final formatted = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-      setState(() => _selected = formatted);
+      setState(() {
+        _selected = formatted;
+        _ctrl.text = formatted;
+      });
       widget.onChanged?.call(formatted);
     }
   }
@@ -80,9 +100,10 @@ class _FormDateState extends State<FormDate> {
   @override
   Widget build(BuildContext context) {
     return TextField(
-      controller: TextEditingController(text: _selected ?? ''),
+      controller: _ctrl,
       readOnly: true,
       onTap: widget.readonly ? null : _pickDate,
+      style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16),
       decoration: InputDecoration(
         border: const OutlineInputBorder(),
         isDense: true,

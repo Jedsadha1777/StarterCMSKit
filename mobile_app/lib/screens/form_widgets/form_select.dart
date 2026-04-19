@@ -70,7 +70,7 @@ class _FormSelectState extends State<FormSelect> {
     }).toList();
 
     return DropdownButtonFormField<String>(
-      initialValue: _selected,
+      value: _selected,
       hint: Text(hint),
       items: items,
       onChanged: widget.disabled

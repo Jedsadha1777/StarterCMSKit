@@ -1,11 +1,11 @@
-from flask import request, jsonify
+from flask import request, jsonify, g
 from flask_jwt_extended import jwt_required
 from admin_api import admin_bp
 from extensions import db
 from models import Company, Package
-from decorators import admin_required
+from decorators import admin_required, company_required
 from utils import load_schema, get_or_404
-from schemas import CompanyCreateSchema, CompanyUpdateSchema, CompanyResponseSchema
+from schemas import CompanyCreateSchema, CompanyUpdateSchema, CompanyResponseSchema, ReportSettingsSchema
 
 
 @admin_bp.route('/companies', methods=['GET'])
@@ -91,6 +91,9 @@ def update_company(admin, company_public_id):
     if data.get('name'):
         company.name = data['name']
 
+    if 'report_cc_email' in data:
+        company.report_cc_email = data['report_cc_email']
+
     if 'package_id' in data:
         if data['package_id']:
             package = Package.query.get(data['package_id'])
@@ -121,3 +124,27 @@ def delete_company(admin, company_public_id):
     db.session.commit()
 
     return jsonify({'message': 'Company deleted successfully'}), 200
+
+
+# ── Report Settings (CC Email) — ทั้ง super + tenant admin ใช้ได้ ──
+
+@admin_bp.route('/company/report-settings', methods=['GET'])
+@jwt_required()
+@admin_required
+@company_required
+def get_report_settings(admin):
+    return jsonify({'report_cc_email': g.active_company.report_cc_email}), 200
+
+
+@admin_bp.route('/company/report-settings', methods=['PUT'])
+@jwt_required()
+@admin_required
+@company_required
+def update_report_settings(admin):
+    data, err = load_schema(ReportSettingsSchema)
+    if err: return err
+
+    g.active_company.report_cc_email = data.get('report_cc_email')
+    db.session.commit()
+
+    return jsonify({'report_cc_email': g.active_company.report_cc_email}), 200

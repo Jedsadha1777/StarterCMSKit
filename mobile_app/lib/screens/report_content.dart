@@ -1,20 +1,55 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'dart:math' as math;
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'form_widgets/form_widgets.dart';
 import 'preview_shell.dart';
+import '../services/local_db.dart';
+import '../services/api/report_api.dart';
+import '../services/connectivity_service.dart';
+import 'email_dialog.dart';
 
 void main() => runApp(PreviewShell(
-  pages: [_ContentWidget()],
-  pagePadding: EdgeInsets.all(5),  
+  pages: [ReportContentWidget()],
+  pagePadding: EdgeInsets.all(5),
 ));
 
-class _ContentWidget extends StatefulWidget {
-  const _ContentWidget({super.key});
+class ReportContentWidget extends StatefulWidget {
+  final Map<String, dynamic>? machineModel;
+  final Map<String, dynamic>? draftData;
+
+  const ReportContentWidget({super.key, this.machineModel, this.draftData});
+
   @override
-  State<_ContentWidget> createState() => _ContentWidgetState();
+  State<ReportContentWidget> createState() => ReportContentWidgetState();
 }
 
-class _ContentWidgetState extends State<_ContentWidget> {
+class ReportContentWidgetState extends State<ReportContentWidget> {
+
+  String? _draftId;
+  bool _isSaving = false;
+  bool _isSending = false;
+  bool _snapMode = false;
+  final GlobalKey _captureKey = GlobalKey();
+
+  // ============ NON-CONTROLLER STATE (FormDate, FormSearch, FormSignature) ============
+  String? _formDate;
+  String? _machineModelSearch;
+  String? _installDate;
+  String? _inspectionDate;
+  String? _dateCustomerSign;
+  String? _dateEngineerSign;
+  // ลายเซ็น: เก็บเป็นไฟล์ PNG บน disk, เก็บ path ใน form_data
+  String? _customerSignPath;
+  String? _engineerSignPath;
+  Uint8List? _customerSignBytes;  // bytes สำหรับแสดงผล (อ่านจากไฟล์)
+  Uint8List? _engineerSignBytes;
 
   // ============ CONTROLLERS ============
   final _formNoController = TextEditingController();
@@ -49,9 +84,363 @@ class _ContentWidgetState extends State<_ContentWidget> {
   final _textareaHandlingController = TextEditingController();
   final _remarkController = TextEditingController();
 
+  // ============ CONTROLLER MAP ============
+  // เปลี่ยนชื่อ/เพิ่ม/ลด controller ที่นี่ที่เดียว — save/load/send ทำงานอัตโนมัติ
+  Map<String, TextEditingController> get _controllerMap => {
+    'formNo': _formNoController,
+    'customerName': _customerNameController,
+    'serialNo': _serialNoController,
+    'installFree': _installFreeController,
+    'inspectorBy': _inspectorByController,
+    'checkItem1': _checkItem1Controller,
+    'afterAdj1': _afterAdj1Controller,
+    'checkItem2': _checkItem2Controller,
+    'afterAdj2': _afterAdj2Controller,
+    'checkItem3': _checkItem3Controller,
+    'afterAdj3': _afterAdj3Controller,
+    'checkItem4': _checkItem4Controller,
+    'afterAdj4': _afterAdj4Controller,
+    'checkItem5': _checkItem5Controller,
+    'afterAdj5': _afterAdj5Controller,
+    'checkItem6': _checkItem6Controller,
+    'afterAdj6': _afterAdj6Controller,
+    'checkItem7': _checkItem7Controller,
+    'afterAdj7': _afterAdj7Controller,
+    'checkItem8': _checkItem8Controller,
+    'afterAdj8': _afterAdj8Controller,
+    'checkItem9': _checkItem9Controller,
+    'afterAdj9': _afterAdj9Controller,
+    'checkItem10': _checkItem10Controller,
+    'afterAdj10': _afterAdj10Controller,
+    'inputResultOk': _inputResultOkController,
+    'inputResultNg': _inputResultNgController,
+    'inputResultOther': _inputResultOtherController,
+    'inputOtherComment': _inputOtherCommentController,
+    'textareaHandling': _textareaHandlingController,
+    'remark': _remarkController,
+  };
+
+  // ============ SNAP MODE HELPER ============
+  InputDecoration get _inputDecoration => _snapMode
+      ? const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4))
+      : const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8));
+
+  // ============ INSPECTION ITEMS HELPER ============
+  List<Map<String, dynamic>> get _inspectionItems =>
+    (widget.machineModel?['inspection_items'] as List?)
+        ?.cast<Map<String, dynamic>>() ?? [];
+
+  String _itemName(int index) =>
+    index < _inspectionItems.length ? (_inspectionItems[index]['item_name'] ?? '') : '';
+
+  String _itemSpec(int index) =>
+    index < _inspectionItems.length ? (_inspectionItems[index]['spec'] ?? '') : '';
+
+  // ============ SIGNATURE FILE HELPERS ============
+  Future<String> _saveSignatureFile(String name, Uint8List bytes) async {
+    final dir = await getApplicationSupportDirectory();
+    final path = '${dir.path}/${_draftId}_$name.png';
+    await File(path).writeAsBytes(bytes);
+    return path;
+  }
+
+  Future<Uint8List?> _loadSignatureFile(String? path) async {
+    if (path == null || path.isEmpty) return null;
+    final file = File(path);
+    if (await file.exists()) return await file.readAsBytes();
+    return null;
+  }
+
+  Future<void> _onCustomerSigned(Uint8List? bytes) async {
+    _customerSignBytes = bytes;
+    if (bytes != null && _draftId != null) {
+      _customerSignPath = await _saveSignatureFile('customer_sign', bytes);
+    } else {
+      _customerSignPath = null;
+    }
+  }
+
+  Future<void> _onEngineerSigned(Uint8List? bytes) async {
+    _engineerSignBytes = bytes;
+    if (bytes != null && _draftId != null) {
+      _engineerSignPath = await _saveSignatureFile('engineer_sign', bytes);
+    } else {
+      _engineerSignPath = null;
+    }
+  }
+
+  Map<String, dynamic> _collectData() {
+    final data = <String, dynamic>{};
+    for (final entry in _controllerMap.entries) {
+      data[entry.key] = entry.value.text;
+    }
+    data['formDate'] = _formDate;
+    data['installDate'] = _installDate;
+    data['inspectionDate'] = _inspectionDate;
+    data['dateCustomerSign'] = _dateCustomerSign;
+    data['dateEngineerSign'] = _dateEngineerSign;
+    data['machineModelSearch'] = _machineModelSearch;
+    // ลายเซ็น: เก็บ file path (ไม่ใช่ bytes)
+    data['customerSignPath'] = _customerSignPath;
+    data['engineerSignPath'] = _engineerSignPath;
+    for (int i = 0; i < _inspectionItems.length && i < 10; i++) {
+      data['itemName${i + 1}'] = _inspectionItems[i]['item_name'] ?? '';
+      data['itemSpec${i + 1}'] = _inspectionItems[i]['spec'] ?? '';
+    }
+    return data;
+  }
+
+  void _restoreData(Map<String, dynamic> formData) async {
+    for (final entry in formData.entries) {
+      final ctrl = _controllerMap[entry.key];
+      if (ctrl != null && entry.value is String) {
+        ctrl.text = entry.value;
+        continue;
+      }
+      switch (entry.key) {
+        case 'formDate': _formDate = entry.value as String?;
+        case 'installDate': _installDate = entry.value as String?;
+        case 'inspectionDate': _inspectionDate = entry.value as String?;
+        case 'dateCustomerSign': _dateCustomerSign = entry.value as String?;
+        case 'dateEngineerSign': _dateEngineerSign = entry.value as String?;
+        case 'machineModelSearch': _machineModelSearch = entry.value as String?;
+        case 'customerSignPath':
+          _customerSignPath = entry.value as String?;
+          _customerSignBytes = await _loadSignatureFile(_customerSignPath);
+        case 'engineerSignPath':
+          _engineerSignPath = entry.value as String?;
+          _engineerSignBytes = await _loadSignatureFile(_engineerSignPath);
+      }
+    }
+    if (mounted) setState(() {});
+  }
 
   @override
-  Widget build(BuildContext context) => UnconstrainedBox(
+  void initState() {
+    super.initState();
+    if (widget.draftData != null) {
+      _draftId = widget.draftData!['draft_id'] as String?;
+      final formData = widget.draftData!['form_data'];
+      if (formData is Map<String, dynamic>) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _restoreData(formData));
+      }
+    } else {
+      _draftId = const Uuid().v4();
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final ctrl in _controllerMap.values) {
+      ctrl.dispose();
+    }
+    super.dispose();
+  }
+
+  Future<void> onSave() async {
+    if (_isSaving) return;
+    setState(() => _isSaving = true);
+    try {
+      await LocalDb().saveDraft(
+        draftId: _draftId!,
+        machineModelId: widget.machineModel?['id'] ?? '',
+        formData: _collectData(),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Draft saved!'), duration: Duration(seconds: 1)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<Uint8List?> _captureScreenshot() async {
+    final boundary = _captureKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) return null;
+    final image = await boundary.toImage(pixelRatio: 2.0);
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    return byteData?.buffer.asUint8List();
+  }
+
+  Future<Uint8List> _imageToPdf(Uint8List pngBytes) async {
+    final pdf = pw.Document();
+    final image = pw.MemoryImage(pngBytes);
+    pdf.addPage(pw.Page(
+      pageFormat: PdfPageFormat.a4,
+      margin: pw.EdgeInsets.zero,
+      build: (ctx) => pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain)),
+    ));
+    return pdf.save();
+  }
+
+  Future<void> onSend() async {
+    if (_isSending) return;
+    if (!ConnectivityService().isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No internet connection. Please save as draft.')),
+      );
+      return;
+    }
+
+    // Validate mandatory fields
+    final missing = <String>[];
+    if (_customerNameController.text.trim().isEmpty) missing.add('Customer Name');
+    if (_serialNoController.text.trim().isEmpty) missing.add('Serial No');
+    if (_inspectionDate == null || _inspectionDate!.isEmpty) missing.add('Inspection Date');
+    if (_inspectorByController.text.trim().isEmpty) missing.add('Inspector');
+
+    if (missing.isNotEmpty) {
+      if (mounted) {
+        showDialog(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('Incomplete'),
+          content: Text('Please fill in:\n${missing.join('\n')}'),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+        ));
+      }
+      return;
+    }
+
+    // Validate signatures
+    if (_customerSignBytes == null || _engineerSignBytes == null) {
+      if (mounted) {
+        final missingSigns = <String>[];
+        if (_customerSignBytes == null) missingSigns.add('Customer signature');
+        if (_engineerSignBytes == null) missingSigns.add('Engineer signature');
+        showDialog(context: context, builder: (ctx) => AlertDialog(
+          title: const Text('Signature Required'),
+          content: Text('Missing:\n${missingSigns.join('\n')}'),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+        ));
+      }
+      return;
+    }
+
+    final emails = await showEmailDialog(context);
+    if (emails == null || emails.isEmpty) return;
+
+    setState(() => _isSending = true);
+    try {
+      String? reportNo;
+      String? reportId;
+
+      // Check if we already have a report_public_id (retry after capture fail)
+      if (_draftId != null) {
+        final existingDraft = await LocalDb().loadDraft(_draftId!);
+        final existingReportId = existingDraft?['report_public_id'] as String?;
+        if (existingReportId != null && existingReportId.isNotEmpty) {
+          // Skip submit — report already created, just need capture + upload
+          reportId = existingReportId;
+          reportNo = existingDraft?['report_no'] as String?;
+        }
+      }
+
+      // Step 1: Submit report → get report_no (status=pending_pdf) — skip if already submitted
+      if (reportId == null) {
+        final result = await ReportApi().submitReport(
+          formData: _collectData(),
+          recipientEmails: emails,
+          machineModelId: widget.machineModel?['id'] ?? '',
+          serialNo: _serialNoController.text,
+          inspectorName: _inspectorByController.text,
+        );
+        reportNo = result['report_no'] as String?;
+        reportId = result['id'] as String?;
+
+        // Save report_public_id to draft
+        if (_draftId != null && reportId != null) {
+          await LocalDb().updateDraftStatus(_draftId!, 'sent', reportNo: reportNo, reportPublicId: reportId);
+        }
+      }
+
+      // Step 2: Fill report_no in form
+      if (reportNo != null) _formNoController.text = reportNo;
+
+      // Step 3: Snap mode — show overlay, hide input borders, capture screenshot
+      setState(() => _snapMode = true);
+      await Future.delayed(const Duration(milliseconds: 200)); // wait for rebuild
+
+      Uint8List? pngBytes = await _captureScreenshot();
+      // Retry once if capture failed
+      if (pngBytes == null) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        pngBytes = await _captureScreenshot();
+      }
+
+      setState(() => _snapMode = false);
+
+      if (pngBytes == null || reportId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Screenshot failed. Press Send again to retry (report no. is saved).'),
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Step 4: Convert PNG → PDF
+      final pdfBytes = await _imageToPdf(pngBytes);
+
+      // Save PDF to draft (for retry if upload fails)
+      if (_draftId != null) {
+        await LocalDb().savePdfData(_draftId!, pdfBytes);
+      }
+
+      // Step 5: Upload PDF
+      final uploadResult = await ReportApi().uploadPdf(reportId, pdfBytes);
+
+      // Clear PDF data from draft after successful upload
+      if (_draftId != null) {
+        await LocalDb().clearPdfData(_draftId!);
+      }
+
+      final status = uploadResult['status'] as String?;
+      if (mounted) {
+        if (status == 'email_failed') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Report saved but email failed. You can retry from Report History.'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+        } else {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Success'),
+              content: Text('Report submitted.\nReport No: $reportNo'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.pop(context, true);
+                  },
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Send failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() { _isSending = false; _snapMode = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => RepaintBoundary(
+      key: _captureKey,
+      child: UnconstrainedBox(
   alignment: Alignment.topLeft,
   child: LayoutBuilder(
   builder: (context, constraints) {
@@ -305,7 +694,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               )),
           Positioned(left: cs[34], top: rs[2], width: cs[44] - cs[34], height: rs[3] - rs[2], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Colors.transparent),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _formNoController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _formNoController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           cell(0, 3, 1, 4, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(1, 3, 2, 4, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(2, 3, 3, 4, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
@@ -343,7 +732,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               )),
           Positioned(left: cs[34], top: rs[3], width: cs[44] - cs[34], height: rs[4] - rs[3], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF)),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'form-date', readonly: true)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'form-date', readonly: true, value: _formDate, onChanged: (v) => _formDate = v)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[0], top: rs[4], width: cs[44] - cs[0], height: rs[7] - rs[4], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -358,7 +747,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               ))),
           Positioned(left: cs[9], top: rs[7], width: cs[44] - cs[9], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _customerNameController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name', fields: 'customer_name', required: true, value: _customerNameController.text, onSelected: (v) { if (v != null) { _customerNameController.text = v['name'] as String? ?? ''; setState(() {}); } }))),
           Positioned(left: cs[0], top: rs[8], width: cs[9] - cs[0], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), left: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -367,7 +756,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.top(color: Color(0xFF000000), width: 1, dotted: true), _DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[9], top: rs[8], width: cs[22] - cs[9], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'machine_model', source: 'machines', displayFields: 'code,name', fields: 'machine_model', required: true)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'machine_model', source: 'machines', displayFields: 'code,name', fields: 'machine_model', required: true, value: _machineModelSearch, onSelected: (v) => _machineModelSearch = v?['machine_model'] as String?)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[22], top: rs[8], width: cs[29] - cs[22], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -376,7 +765,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[29], top: rs[8], width: cs[44] - cs[29], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _serialNoController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _serialNoController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[0], top: rs[9], width: cs[9] - cs[0], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), left: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -385,7 +774,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[9], top: rs[9], width: cs[22] - cs[9], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'install-date', required: true)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'install-date', required: true, value: _installDate, onChanged: (v) => _installDate = v)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[22], top: rs[9], width: cs[29] - cs[22], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -394,7 +783,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[29], top: rs[9], width: cs[44] - cs[29], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _installFreeController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8)))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _installFreeController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[0], top: rs[10], width: cs[9] - cs[0], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -403,7 +792,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               ))),
           Positioned(left: cs[9], top: rs[10], width: cs[22] - cs[9], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'inspection-date', required: true))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'inspection-date', required: true, value: _inspectionDate, onChanged: (v) => _inspectionDate = v))),
           Positioned(left: cs[22], top: rs[10], width: cs[29] - cs[22], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -412,7 +801,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               ))),
           Positioned(left: cs[29], top: rs[10], width: cs[44] - cs[29], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inspectorByController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inspectorByController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[11], width: cs[1] - cs[0], height: rs[12] - rs[11], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
@@ -601,17 +990,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(0), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[15], width: cs[30] - cs[25], height: rs[16] - rs[15], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.005 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(0), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[15], width: cs[37] - cs[30], height: rs[16] - rs[15], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem1Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem1Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[15], width: cs[44] - cs[37], height: rs[16] - rs[15], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj1Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj1Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[16], width: cs[2] - cs[0], height: rs[17] - rs[16], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -622,17 +1011,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(1), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[16], width: cs[30] - cs[25], height: rs[17] - rs[16], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.006 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(1), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[16], width: cs[37] - cs[30], height: rs[17] - rs[16], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem2Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem2Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[16], width: cs[44] - cs[37], height: rs[17] - rs[16], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj2Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj2Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[17], width: cs[2] - cs[0], height: rs[18] - rs[17], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -643,17 +1032,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(2), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[17], width: cs[30] - cs[25], height: rs[18] - rs[17], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.007 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(2), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[17], width: cs[37] - cs[30], height: rs[18] - rs[17], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem3Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem3Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[17], width: cs[44] - cs[37], height: rs[18] - rs[17], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj3Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj3Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[18], width: cs[2] - cs[0], height: rs[19] - rs[18], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -664,17 +1053,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(3), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[18], width: cs[30] - cs[25], height: rs[19] - rs[18], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.008 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(3), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[18], width: cs[37] - cs[30], height: rs[19] - rs[18], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem4Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem4Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[18], width: cs[44] - cs[37], height: rs[19] - rs[18], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj4Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj4Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[19], width: cs[2] - cs[0], height: rs[20] - rs[19], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -685,17 +1074,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(4), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[19], width: cs[30] - cs[25], height: rs[20] - rs[19], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.009 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(4), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[19], width: cs[37] - cs[30], height: rs[20] - rs[19], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem5Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem5Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[19], width: cs[44] - cs[37], height: rs[20] - rs[19], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj5Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj5Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[20], width: cs[2] - cs[0], height: rs[21] - rs[20], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -706,17 +1095,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(5), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[20], width: cs[30] - cs[25], height: rs[21] - rs[20], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.010 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(5), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[20], width: cs[37] - cs[30], height: rs[21] - rs[20], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem6Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem6Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[20], width: cs[44] - cs[37], height: rs[21] - rs[20], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj6Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj6Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[21], width: cs[2] - cs[0], height: rs[22] - rs[21], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -727,17 +1116,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(6), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[21], width: cs[30] - cs[25], height: rs[22] - rs[21], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.011 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(6), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[21], width: cs[37] - cs[30], height: rs[22] - rs[21], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem7Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem7Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[21], width: cs[44] - cs[37], height: rs[22] - rs[21], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj7Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj7Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[22], width: cs[2] - cs[0], height: rs[23] - rs[22], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -748,17 +1137,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(7), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[22], width: cs[30] - cs[25], height: rs[23] - rs[22], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.012 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(7), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[22], width: cs[37] - cs[30], height: rs[23] - rs[22], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem8Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem8Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[22], width: cs[44] - cs[37], height: rs[23] - rs[22], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj8Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj8Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[23], width: cs[2] - cs[0], height: rs[24] - rs[23], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -769,17 +1158,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(8), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[23], width: cs[30] - cs[25], height: rs[24] - rs[23], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.013 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(8), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[23], width: cs[37] - cs[30], height: rs[24] - rs[23], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem9Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem9Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[23], width: cs[44] - cs[37], height: rs[24] - rs[23], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj9Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj9Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[24], width: cs[2] - cs[0], height: rs[25] - rs[24], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -790,17 +1179,17 @@ class _ContentWidgetState extends State<_ContentWidget> {
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Cordia New', fontSize: 21.3, color: Color(0xFF000000)),
-                child: Text('RUN OUT ON SPINDLE(CHUCK) UNIT', softWrap: false, overflow: TextOverflow.visible),
+                child: Text(_itemName(9), softWrap: false, overflow: TextOverflow.visible),
               ))),
           Positioned(left: cs[25], top: rs[24], width: cs[30] - cs[25], height: rs[25] - rs[24], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t('0.014 mm.', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _t(_itemSpec(9), sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New', align: TextAlign.center))),
           Positioned(left: cs[30], top: rs[24], width: cs[37] - cs[30], height: rs[25] - rs[24], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem10Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _checkItem10Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[37], top: rs[24], width: cs[44] - cs[37], height: rs[25] - rs[24], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj10Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _afterAdj10Controller, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[25], width: cs[12] - cs[0], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -848,7 +1237,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[25], top: rs[25], width: cs[27] - cs[25], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inputResultOkController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inputResultOkController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[27], top: rs[25], width: cs[29] - cs[27], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -857,7 +1246,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               ))),
           Positioned(left: cs[29], top: rs[25], width: cs[31] - cs[29], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inputResultNgController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inputResultNgController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[31], top: rs[25], width: cs[33] - cs[31], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -866,13 +1255,13 @@ class _ContentWidgetState extends State<_ContentWidget> {
               ))),
           Positioned(left: cs[33], top: rs[25], width: cs[35] - cs[33], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inputResultOtherController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inputResultOtherController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[35], top: rs[25], width: cs[37] - cs[35], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _t('Other', sz: 21.3, color: Color(0xFF000000), ff: 'Cordia New'))),
           Positioned(left: cs[37], top: rs[25], width: cs[44] - cs[37], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inputOtherCommentController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inputOtherCommentController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[26], width: cs[44] - cs[0], height: rs[27] - rs[26], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.topLeft, child: DefaultTextStyle.merge(
@@ -881,7 +1270,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               ))),
           Positioned(left: cs[0], top: rs[27], width: cs[44] - cs[0], height: rs[31] - rs[27], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _textareaHandlingController, maxLines: 3, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _textareaHandlingController, maxLines: 3, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[0], top: rs[31], width: cs[44] - cs[0], height: rs[32] - rs[31], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.topLeft, child: DefaultTextStyle.merge(
@@ -890,7 +1279,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               ))),
           Positioned(left: cs[0], top: rs[32], width: cs[44] - cs[0], height: rs[36] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(left: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _remarkController, maxLines: 3, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8))))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _remarkController, maxLines: 3, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
           cell(0, 36, 1, 37, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), align: Alignment.topLeft, child: const SizedBox.shrink()),
           cell(1, 36, 2, 37, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), align: Alignment.topLeft, child: const SizedBox.shrink()),
           cell(2, 36, 3, 37, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), align: Alignment.topLeft, child: const SizedBox.shrink()),
@@ -944,7 +1333,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               )),
           Positioned(left: cs[5], top: rs[37], width: cs[18] - cs[5], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-customer-sign', required: true))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-customer-sign', required: true, value: _dateCustomerSign, onChanged: (v) => _dateCustomerSign = v))),
           cell(18, 37, 19, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(19, 37, 20, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(20, 37, 21, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
@@ -959,7 +1348,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               )),
           Positioned(left: cs[28], top: rs[37], width: cs[41] - cs[28], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-engineer-sign', required: true))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-engineer-sign', required: true, value: _dateEngineerSign, onChanged: (v) => _dateEngineerSign = v))),
           cell(41, 37, 42, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(42, 37, 43, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(43, 37, 44, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), align: Alignment.topLeft, child: const SizedBox.shrink()),
@@ -1068,7 +1457,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[5], top: rs[39], width: cs[18] - cs[5], height: rs[43] - rs[39], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'customer-sign'))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'customer-sign', initialData: _customerSignBytes, onSigned: (v) => _onCustomerSigned(v)))),
           cell(18, 39, 19, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(19, 39, 20, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(20, 39, 21, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
@@ -1083,7 +1472,7 @@ class _ContentWidgetState extends State<_ContentWidget> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[28], top: rs[39], width: cs[41] - cs[28], height: rs[43] - rs[39], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'engineer-sign'))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'engineer-sign', initialData: _engineerSignBytes, onSigned: (v) => _onEngineerSigned(v)))),
           cell(41, 39, 42, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(42, 39, 43, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(43, 39, 44, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
@@ -1272,7 +1661,8 @@ class _ContentWidgetState extends State<_ContentWidget> {
     );
   },
 ),
-);
+),  // end UnconstrainedBox
+  );  // end RepaintBoundary
 }
 
 // ============ HELPER CLASSES ============

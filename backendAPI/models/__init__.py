@@ -18,6 +18,9 @@ from .package import Package, PackageLimit, PackageRolePermission
 from .customer import Customer
 from .import_history import ImportHistory
 from .inspection_item import InspectionItem
+from .machine_model import MachineModel, machine_model_inspection_items
+from .report import Report, ReportCounter, generate_report_no
 
 __all__ = ['Company', 'Admin', 'AdminRole', 'User', 'Article', 'TokenBlacklist', 'Summary', 'AdminSession', 'Setting',
-           'Package', 'PackageLimit', 'PackageRolePermission', 'Customer', 'ImportHistory', 'InspectionItem']
+           'Package', 'PackageLimit', 'PackageRolePermission', 'Customer', 'ImportHistory', 'InspectionItem',
+           'MachineModel', 'machine_model_inspection_items', 'Report', 'ReportCounter', 'generate_report_no']

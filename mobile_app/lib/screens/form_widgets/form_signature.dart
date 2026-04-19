@@ -7,6 +7,7 @@ class FormSignature extends StatefulWidget {
   final double? width;
   final double? height;
   final String? value;
+  final Uint8List? initialData;
   final ValueChanged<Uint8List?>? onSigned;
 
   const FormSignature({
@@ -15,6 +16,7 @@ class FormSignature extends StatefulWidget {
     this.width,
     this.height,
     this.value,
+    this.initialData,
     this.onSigned,
   });
 
@@ -37,6 +39,26 @@ class FormSignature extends StatefulWidget {
 class _FormSignatureState extends State<FormSignature> {
   Uint8List? _signatureBytes;
   bool _hasSigned = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialData != null) {
+      _signatureBytes = widget.initialData;
+      _hasSigned = true;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant FormSignature oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialData != oldWidget.initialData && widget.initialData != null) {
+      setState(() {
+        _signatureBytes = widget.initialData;
+        _hasSigned = true;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

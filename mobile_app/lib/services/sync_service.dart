@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'api/api_client.dart';
 import 'local_db.dart';
 import 'connectivity_service.dart';
@@ -23,6 +24,7 @@ class SyncService {
       final lastSync = await _localDb.getLastSyncAt();
       return await _fetchPages(lastSync);
     } catch (e) {
+      debugPrint('SyncService failed: $e');
       return false;
     } finally {
       _isSyncing = false;

@@ -213,6 +213,47 @@ class InspectionItemResponseSchema(Schema):
         return obj.creator.name if obj.creator else None
 
 
+# ── MachineModel ──
+
+class MachineModelCreateSchema(Schema):
+    class Meta:
+        unknown = EXCLUDE
+    model_code = fields.String(required=True, validate=[validate.Length(min=1), alphanumeric])
+    model_name = fields.String(required=True, validate=validate.Length(min=1))
+    inspection_item_ids = fields.List(fields.String(), load_default=[])
+
+
+class MachineModelUpdateSchema(Schema):
+    class Meta:
+        unknown = EXCLUDE
+    model_code = fields.String(validate=[validate.Length(min=1), alphanumeric])
+    model_name = fields.String(validate=validate.Length(min=1))
+    inspection_item_ids = fields.List(fields.String(), load_default=None)
+
+
+class MachineModelResponseSchema(Schema):
+    id = fields.Method('get_id')
+    model_code = fields.String()
+    model_name = fields.String()
+    inspection_items = fields.Method('get_inspection_items')
+    created_by = fields.Method('get_created_by')
+    created_by_name = fields.Method('get_created_by_name')
+    created_at = fields.DateTime(format='iso')
+    updated_at = fields.DateTime(format='iso')
+
+    def get_id(self, obj):
+        return obj.public_id
+
+    def get_inspection_items(self, obj):
+        return [item.to_dict() for item in obj.inspection_items]
+
+    def get_created_by(self, obj):
+        return obj.creator.public_id if obj.creator else None
+
+    def get_created_by_name(self, obj):
+        return obj.creator.name if obj.creator else None
+
+
 # ── Company ──
 
 class CompanyCreateSchema(Schema):
@@ -227,6 +268,7 @@ class CompanyUpdateSchema(Schema):
         unknown = EXCLUDE
     name = fields.String(validate=validate.Length(min=1))
     package_id = fields.Integer(allow_none=True)
+    report_cc_email = fields.String(allow_none=True)
 
 
 class CompanyResponseSchema(Schema):
@@ -235,6 +277,7 @@ class CompanyResponseSchema(Schema):
     parent_id = fields.Integer()
     package_id = fields.Integer()
     is_root = fields.Boolean()
+    report_cc_email = fields.String()
     created_at = fields.DateTime(format='iso')
     updated_at = fields.DateTime(format='iso')
 
@@ -289,6 +332,76 @@ class ChangePasswordSchema(Schema):
         unknown = EXCLUDE
     old_password = fields.String(required=True)
     new_password = fields.String(required=True, validate=password_length)
+
+
+# ── Report ──
+
+class ReportCreateSchema(Schema):
+    class Meta:
+        unknown = EXCLUDE
+    form_data = fields.Dict(required=True)
+    recipient_emails = fields.List(fields.Email(), required=True, validate=validate.Length(min=1))
+    machine_model_id = fields.String(required=True)
+    customer_id = fields.String(load_default=None)
+    serial_no = fields.String(load_default=None)
+    inspector_name = fields.String(load_default=None)
+    inspected_at = fields.DateTime(format='iso', load_default=None)
+
+    @validates('form_data')
+    def validate_form_data(self, value):
+        if not value:
+            raise ValidationError('form_data must not be empty')
+
+
+class ReportStatusUpdateSchema(Schema):
+    class Meta:
+        unknown = EXCLUDE
+    status = fields.String(required=True, validate=validate.OneOf(['reviewed', 'approved', 'rejected']))
+
+
+class ReportResponseSchema(Schema):
+    id = fields.Method('get_id')
+    report_no = fields.String()
+    form_data = fields.Dict()
+    machine_model_id = fields.Method('get_machine_model_id')
+    customer_id = fields.Method('get_customer_id')
+    serial_no = fields.String()
+    inspector_name = fields.String()
+    user_id = fields.Method('get_user_id')
+    user_name = fields.Method('get_user_name')
+    status = fields.String()
+    inspected_at = fields.DateTime(format='iso')
+    sent_at = fields.DateTime(format='iso')
+    email_recipients = fields.Raw()
+    pdf_path = fields.Method('get_has_pdf')
+    created_at = fields.DateTime(format='iso')
+    updated_at = fields.DateTime(format='iso')
+
+    def get_id(self, obj):
+        return obj.public_id
+
+    def get_machine_model_id(self, obj):
+        return obj.machine_model.public_id if obj.machine_model else None
+
+    def get_customer_id(self, obj):
+        return obj.customer.public_id if obj.customer else None
+
+    def get_user_id(self, obj):
+        return obj.user.public_id if obj.user else None
+
+    def get_user_name(self, obj):
+        return obj.user.name if obj.user else None
+
+    def get_has_pdf(self, obj):
+        return obj.pdf_path if obj.pdf_path else None
+
+
+# ── Report Settings ──
+
+class ReportSettingsSchema(Schema):
+    class Meta:
+        unknown = EXCLUDE
+    report_cc_email = fields.String(allow_none=True)
 
 
 # ── Login ──

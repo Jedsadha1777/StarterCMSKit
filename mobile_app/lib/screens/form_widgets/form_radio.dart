@@ -54,27 +54,27 @@ class _FormRadioState extends State<FormRadio> {
 
   @override
   Widget build(BuildContext context) {
-    return RadioGroup<String>(
-      groupValue: _selected ?? '',
-      onChanged: widget.disabled
-          ? (v) {}
-          : (v) {
-              setState(() => _selected = v);
-              widget.onChanged?.call(v);
-            },
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 4,
-        children: widget.options.map((opt) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Radio<String>(value: opt),
-              Text(opt),
-            ],
-          );
-        }).toList(),
-      ),
+    return Wrap(
+      spacing: 8,
+      runSpacing: 4,
+      children: widget.options.map((opt) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Radio<String>(
+              value: opt,
+              groupValue: _selected,
+              onChanged: widget.disabled
+                  ? null
+                  : (v) {
+                      setState(() => _selected = v);
+                      widget.onChanged?.call(v);
+                    },
+            ),
+            Text(opt, style: const TextStyle(fontSize: 12)),
+          ],
+        );
+      }).toList(),
     );
   }
 }

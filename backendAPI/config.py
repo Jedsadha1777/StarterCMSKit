@@ -32,5 +32,12 @@ SSE_HEARTBEAT_INTERVAL = int(os.getenv('SSE_HEARTBEAT_INTERVAL', '25'))
 # Cleanup
 CLEANUP_CUTOFF_DAYS = int(os.getenv('CLEANUP_CUTOFF_DAYS', '7'))
 
+# SMTP
+SMTP_SERVER = os.getenv('SMTP_SERVER', 'smtp.gmail.com')
+SMTP_PORT = int(os.getenv('SMTP_PORT', '587'))
+SMTP_USERNAME = os.getenv('SMTP_USERNAME', '')
+SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+SMTP_SENDER_NAME = os.getenv('SMTP_SENDER_NAME', '')
+
 # Misc
 USER_AGENT_MAX_LENGTH = int(os.getenv('USER_AGENT_MAX_LENGTH', '255'))

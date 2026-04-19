@@ -4,7 +4,7 @@
 
     <v-container fluid>
       <!-- Create button -->
-      <div class="d-flex justify-end mb-4">
+      <div v-if="createTo" class="d-flex justify-end mb-4">
         <v-btn color="success" variant="flat" :to="createTo">
           <v-icon start>mdi-plus</v-icon>Create New
         </v-btn>
@@ -30,7 +30,7 @@ export default {
   components: { PageBanner },
   props: {
     title: { type: String, required: true },
-    createTo: { type: String, required: true },
+    createTo: { type: String, default: null },
     backTo: { type: String, default: '/' },
   }
 }

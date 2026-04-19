@@ -13,6 +13,9 @@ import Customers from './views/Customers.vue'
 import CustomerForm from './views/CustomerForm.vue'
 import InspectionItems from './views/InspectionItems.vue'
 import InspectionItemForm from './views/InspectionItemForm.vue'
+import MachineModels from './views/MachineModels.vue'
+import MachineModelForm from './views/MachineModelForm.vue'
+import Reports from './views/Reports.vue'
 import Profile from './views/Profile.vue'
 import Settings from './views/Settings.vue'
 
@@ -34,6 +37,10 @@ const routes = [
   { path: '/inspection-items', name: 'InspectionItems', component: InspectionItems, meta: { requiresAuth: true, requires: 'inspection_items.view', title: 'Inspection Items' } },
   { path: '/inspection-items/new', name: 'InspectionItemNew', component: InspectionItemForm, meta: { requiresAuth: true, requires: 'inspection_items.create', title: 'New Inspection Item' } },
   { path: '/inspection-items/:id/edit', name: 'InspectionItemEdit', component: InspectionItemForm, meta: { requiresAuth: true, requires: 'inspection_items.edit', title: 'Edit Inspection Item' } },
+  { path: '/machine-models', name: 'MachineModels', component: MachineModels, meta: { requiresAuth: true, requires: 'machine_models.view', title: 'Machine Models' } },
+  { path: '/machine-models/new', name: 'MachineModelNew', component: MachineModelForm, meta: { requiresAuth: true, requires: 'machine_models.create', title: 'New Machine Model' } },
+  { path: '/machine-models/:id/edit', name: 'MachineModelEdit', component: MachineModelForm, meta: { requiresAuth: true, requires: 'machine_models.edit', title: 'Edit Machine Model' } },
+  { path: '/reports', name: 'Reports', component: Reports, meta: { requiresAuth: true, requires: 'reports.view', title: 'Reports' } },
   { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true, requires: 'settings.view', title: 'Settings' } },
   { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true, title: 'Profile' } },
   { path: '/:pathMatch(.*)*', redirect: '/' }

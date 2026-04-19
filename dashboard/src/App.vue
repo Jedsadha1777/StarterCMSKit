@@ -142,6 +142,8 @@ export default {
       { to: '/admins',    icon: 'mdi-shield-account',  title: 'Admins',     match: '/admins',    requires: 'admins.view' },
       { to: '/customers', icon: 'mdi-account-multiple', title: 'Customers',  match: '/customers', requires: 'customers.view' },
       { to: '/inspection-items', icon: 'mdi-clipboard-check', title: 'Inspection',  match: '/inspection-items', requires: 'inspection_items.view' },
+      { to: '/machine-models', icon: 'mdi-cog-outline', title: 'Machine Models', match: '/machine-models', requires: 'machine_models.view' },
+      { to: '/reports', icon: 'mdi-file-document-outline', title: 'Reports', match: '/reports', requires: 'reports.view' },
     ]
 
     const navItems = ref(allNavItems.filter(item => {

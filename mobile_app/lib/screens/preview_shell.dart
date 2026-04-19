@@ -28,6 +28,7 @@ class PreviewShell extends StatefulWidget {
 
   /// Optional back callback — shown as a back button in the AppBar.
   final VoidCallback? onBack;
+  final Widget? bottomBar;
 
   const PreviewShell({
     super.key,
@@ -37,6 +38,7 @@ class PreviewShell extends StatefulWidget {
     this.pagePadding = const EdgeInsets.all(48),
     this.fitHeight = true,
     this.onBack,
+    this.bottomBar,
   });
 
   @override
@@ -184,6 +186,7 @@ class _PreviewShellState extends State<PreviewShell> {
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         backgroundColor: const Color(0xFFE0E0E0),
+        bottomNavigationBar: widget.bottomBar,
         appBar: AppBar(
           leading: widget.onBack != null ? IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: widget.onBack) : null,
           backgroundColor: _red,

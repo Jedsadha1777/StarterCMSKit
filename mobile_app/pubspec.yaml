@@ -18,6 +18,12 @@ dependencies:
   path: ^1.8.3
   connectivity_plus: ^6.0.0
   crypto: ^3.0.3
+  uuid: ^4.2.1
+  pdf: ^3.10.0
+  path_provider: ^2.1.2
+  signature: ^5.4.0
+  image_picker: ^1.0.7
+  file_picker: ^6.1.1
 
 dev_dependencies:
   flutter_test:
@@ -36,3 +42,14 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo.png
+  fonts:
+    - family: Cordia New
+      fonts:
+        - asset: fonts/CordiaNew-Regular.ttf
+        - asset: fonts/CordiaNew-Bold.ttf
+          weight: 700
+        - asset: fonts/CordiaNew-Italic.ttf
+          style: italic
+        - asset: fonts/CordiaNew-BoldItalic.ttf
+          weight: 700
+          style: italic

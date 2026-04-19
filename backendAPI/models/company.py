@@ -11,6 +11,7 @@ class Company(db.Model):
     name = db.Column(db.String(200), nullable=False)
     parent_id = db.Column(db.Integer, nullable=False, default=0)
     package_id = db.Column(db.Integer, db.ForeignKey('packages.id', ondelete='SET NULL'), nullable=True)
+    report_cc_email = db.Column(db.String(255), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
@@ -29,6 +30,7 @@ class Company(db.Model):
             'parent_id': self.parent_id,
             'package_id': self.package_id,
             'is_root': self.is_root,
+            'report_cc_email': self.report_cc_email,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
