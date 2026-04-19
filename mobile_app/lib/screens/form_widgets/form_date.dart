@@ -89,11 +89,15 @@ class _FormDateState extends State<FormDate> {
 
     if (picked != null) {
       final formatted = '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-      setState(() {
-        _selected = formatted;
-        _ctrl.text = formatted;
-      });
+      // เรียก onChanged ก่อนเสมอ — เก็บค่าใน parent state
       widget.onChanged?.call(formatted);
+      // update UI เฉพาะถ้ายัง mounted (อาจถูก dispose ระหว่าง dialog เปิด)
+      if (mounted) {
+        setState(() {
+          _selected = formatted;
+          _ctrl.text = formatted;
+        });
+      }
     }
   }
 

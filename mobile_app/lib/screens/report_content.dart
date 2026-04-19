@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'dart:math' as math;
-import 'dart:io';
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -45,10 +44,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
   String? _inspectionDate;
   String? _dateCustomerSign;
   String? _dateEngineerSign;
-  // ลายเซ็น: เก็บเป็นไฟล์ PNG บน disk, เก็บ path ใน form_data
-  String? _customerSignPath;
-  String? _engineerSignPath;
-  Uint8List? _customerSignBytes;  // bytes สำหรับแสดงผล (อ่านจากไฟล์)
+  Uint8List? _customerSignBytes;
   Uint8List? _engineerSignBytes;
 
   // ============ CONTROLLERS ============
@@ -136,37 +132,13 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
   String _itemSpec(int index) =>
     index < _inspectionItems.length ? (_inspectionItems[index]['spec'] ?? '') : '';
 
-  // ============ SIGNATURE FILE HELPERS ============
-  Future<String> _saveSignatureFile(String name, Uint8List bytes) async {
-    final dir = await getApplicationSupportDirectory();
-    final path = '${dir.path}/${_draftId}_$name.png';
-    await File(path).writeAsBytes(bytes);
-    return path;
+  // ============ SIGNATURE HELPERS ============
+  void _onCustomerSigned(Uint8List? bytes) {
+    setState(() => _customerSignBytes = bytes);
   }
 
-  Future<Uint8List?> _loadSignatureFile(String? path) async {
-    if (path == null || path.isEmpty) return null;
-    final file = File(path);
-    if (await file.exists()) return await file.readAsBytes();
-    return null;
-  }
-
-  Future<void> _onCustomerSigned(Uint8List? bytes) async {
-    _customerSignBytes = bytes;
-    if (bytes != null && _draftId != null) {
-      _customerSignPath = await _saveSignatureFile('customer_sign', bytes);
-    } else {
-      _customerSignPath = null;
-    }
-  }
-
-  Future<void> _onEngineerSigned(Uint8List? bytes) async {
-    _engineerSignBytes = bytes;
-    if (bytes != null && _draftId != null) {
-      _engineerSignPath = await _saveSignatureFile('engineer_sign', bytes);
-    } else {
-      _engineerSignPath = null;
-    }
+  void _onEngineerSigned(Uint8List? bytes) {
+    setState(() => _engineerSignBytes = bytes);
   }
 
   Map<String, dynamic> _collectData() {
@@ -180,9 +152,9 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
     data['dateCustomerSign'] = _dateCustomerSign;
     data['dateEngineerSign'] = _dateEngineerSign;
     data['machineModelSearch'] = _machineModelSearch;
-    // ลายเซ็น: เก็บ file path (ไม่ใช่ bytes)
-    data['customerSignPath'] = _customerSignPath;
-    data['engineerSignPath'] = _engineerSignPath;
+    // ลายเซ็น: เก็บ base64 ใน form_data ตรงๆ
+    data['customerSign'] = _customerSignBytes != null ? base64Encode(_customerSignBytes!) : null;
+    data['engineerSign'] = _engineerSignBytes != null ? base64Encode(_engineerSignBytes!) : null;
     for (int i = 0; i < _inspectionItems.length && i < 10; i++) {
       data['itemName${i + 1}'] = _inspectionItems[i]['item_name'] ?? '';
       data['itemSpec${i + 1}'] = _inspectionItems[i]['spec'] ?? '';
@@ -190,7 +162,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
     return data;
   }
 
-  void _restoreData(Map<String, dynamic> formData) async {
+  void _restoreData(Map<String, dynamic> formData) {
     for (final entry in formData.entries) {
       final ctrl = _controllerMap[entry.key];
       if (ctrl != null && entry.value is String) {
@@ -204,15 +176,12 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
         case 'dateCustomerSign': _dateCustomerSign = entry.value as String?;
         case 'dateEngineerSign': _dateEngineerSign = entry.value as String?;
         case 'machineModelSearch': _machineModelSearch = entry.value as String?;
-        case 'customerSignPath':
-          _customerSignPath = entry.value as String?;
-          _customerSignBytes = await _loadSignatureFile(_customerSignPath);
-        case 'engineerSignPath':
-          _engineerSignPath = entry.value as String?;
-          _engineerSignBytes = await _loadSignatureFile(_engineerSignPath);
+        case 'customerSign':
+          if (entry.value is String) _customerSignBytes = base64Decode(entry.value);
+        case 'engineerSign':
+          if (entry.value is String) _engineerSignBytes = base64Decode(entry.value);
       }
     }
-    if (mounted) setState(() {});
   }
 
   @override
@@ -222,7 +191,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
       _draftId = widget.draftData!['draft_id'] as String?;
       final formData = widget.draftData!['form_data'];
       if (formData is Map<String, dynamic>) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _restoreData(formData));
+        _restoreData(formData); // restore ทันทีก่อน build แรก
       }
     } else {
       _draftId = const Uuid().v4();
@@ -732,7 +701,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )),
           Positioned(left: cs[34], top: rs[3], width: cs[44] - cs[34], height: rs[4] - rs[3], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF)),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'form-date', readonly: true, value: _formDate, onChanged: (v) => _formDate = v)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'form-date', readonly: true, value: _formDate, onChanged: (v) => setState(() => _formDate = v))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[0], top: rs[4], width: cs[44] - cs[0], height: rs[7] - rs[4], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -774,7 +743,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[9], top: rs[9], width: cs[22] - cs[9], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'install-date', required: true, value: _installDate, onChanged: (v) => _installDate = v)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'install-date', required: true, value: _installDate, onChanged: (v) => setState(() => _installDate = v))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[22], top: rs[9], width: cs[29] - cs[22], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -792,7 +761,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               ))),
           Positioned(left: cs[9], top: rs[10], width: cs[22] - cs[9], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'inspection-date', required: true, value: _inspectionDate, onChanged: (v) => _inspectionDate = v))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'inspection-date', required: true, value: _inspectionDate, onChanged: (v) => setState(() => _inspectionDate = v)))),
           Positioned(left: cs[22], top: rs[10], width: cs[29] - cs[22], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -1333,7 +1302,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )),
           Positioned(left: cs[5], top: rs[37], width: cs[18] - cs[5], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-customer-sign', required: true, value: _dateCustomerSign, onChanged: (v) => _dateCustomerSign = v))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-customer-sign', required: true, value: _dateCustomerSign, onChanged: (v) => setState(() => _dateCustomerSign = v)))),
           cell(18, 37, 19, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(19, 37, 20, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(20, 37, 21, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
@@ -1348,7 +1317,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )),
           Positioned(left: cs[28], top: rs[37], width: cs[41] - cs[28], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-engineer-sign', required: true, value: _dateEngineerSign, onChanged: (v) => _dateEngineerSign = v))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-engineer-sign', required: true, value: _dateEngineerSign, onChanged: (v) => setState(() => _dateEngineerSign = v)))),
           cell(41, 37, 42, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(42, 37, 43, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(43, 37, 44, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), align: Alignment.topLeft, child: const SizedBox.shrink()),

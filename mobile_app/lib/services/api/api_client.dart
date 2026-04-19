@@ -77,7 +77,7 @@ class ApiClient {
     String? errorMessage,
     Map<int, String>? statusMessages,
   }) {
-    if (response.statusCode == 200) {
+    if (response.statusCode >= 200 && response.statusCode < 300) {
       final data = safeJsonDecode(response.body);
       return parser(data);
     } else {

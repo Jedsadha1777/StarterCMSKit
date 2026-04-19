@@ -348,7 +348,7 @@ class ReportCreateSchema(Schema):
     inspected_at = fields.DateTime(format='iso', load_default=None)
 
     @validates('form_data')
-    def validate_form_data(self, value):
+    def validate_form_data(self, value, **kwargs):
         if not value:
             raise ValidationError('form_data must not be empty')
 

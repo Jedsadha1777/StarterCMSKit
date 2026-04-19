@@ -24,8 +24,9 @@
         <template #cell-created_at="{ item }">{{ formatDate(item.created_at) }}</template>
         <template #actions="{ item }">
           <v-btn v-if="item.pdf_path" size="small" color="primary" variant="tonal" class="mr-2 text-caption" @click="viewPdf(item.id)">
-            <v-icon start size="small">mdi-file-pdf-box</v-icon>PDF
+            <v-icon start size="small">mdi-file-pdf-box</v-icon>View PDF
           </v-btn>
+          <v-chip v-else-if="item.status === 'pending_pdf'" size="small" color="orange" variant="tonal" class="mr-2">PDF Pending</v-chip>
           <v-select
             v-if="nextStatuses(item.status).length"
             :items="nextStatuses(item.status)"

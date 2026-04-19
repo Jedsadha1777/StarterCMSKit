@@ -2,8 +2,15 @@ import 'package:flutter/material.dart';
 import 'report_content.dart';
 import 'preview_shell.dart';
 
-class ReportScreen extends StatelessWidget {
+class ReportScreen extends StatefulWidget {
   const ReportScreen({super.key});
+
+  @override
+  State<ReportScreen> createState() => _ReportScreenState();
+}
+
+class _ReportScreenState extends State<ReportScreen> {
+  final _contentKey = GlobalKey<ReportContentWidgetState>();
 
   @override
   Widget build(BuildContext context) {
@@ -11,13 +18,11 @@ class ReportScreen extends StatelessWidget {
     final machineModel = args?['machineModel'] as Map<String, dynamic>?;
     final draftData = args?['draftData'] as Map<String, dynamic>?;
 
-    final contentKey = GlobalKey<ReportContentWidgetState>();
-
     return PreviewShell(
       pagePadding: const EdgeInsets.all(5),
       pages: [
         ReportContentWidget(
-          key: contentKey,
+          key: _contentKey,
           machineModel: machineModel,
           draftData: draftData,
         ),
@@ -34,10 +39,10 @@ class ReportScreen extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _buildButton('Save', Icons.save, Colors.green, () {
-                contentKey.currentState?.onSave();
+                _contentKey.currentState?.onSave();
               }),
               _buildButton('Send', Icons.send, const Color(0xFFAD193C), () {
-                contentKey.currentState?.onSend();
+                _contentKey.currentState?.onSend();
               }),
             ],
           ),
