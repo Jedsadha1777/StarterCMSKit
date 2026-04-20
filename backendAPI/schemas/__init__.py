@@ -45,8 +45,8 @@ class AdminResponseSchema(Schema):
     is_super_admin = fields.Boolean()
     created_at = fields.DateTime(format='iso')
     updated_at = fields.DateTime(format='iso')
-    permissions = fields.Raw(load_default=None)
-    limits = fields.Raw(load_default=None)
+    permissions = fields.Method('get_permissions_list')
+    limits = fields.Method('get_limits_dict')
 
     def get_id(self, obj):
         return obj.public_id
@@ -59,6 +59,12 @@ class AdminResponseSchema(Schema):
 
     def get_company_name(self, obj):
         return obj.company.name if obj.company else None
+
+    def get_permissions_list(self, obj):
+        return obj.get_permissions()
+
+    def get_limits_dict(self, obj):
+        return obj.get_limits()
 
 
 # ── User ──

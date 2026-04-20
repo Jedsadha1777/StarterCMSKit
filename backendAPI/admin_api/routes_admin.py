@@ -2,7 +2,7 @@ from flask import request, jsonify, g
 from flask_jwt_extended import jwt_required
 from admin_api import admin_bp
 from extensions import db
-from models import Admin, Article, AdminSession, Package
+from models import Admin, Article, AdminSession, Package, User
 from decorators import admin_required, company_required
 from utils import paginate_query, apply_filters, apply_sorting, format_paginated, load_schema, get_or_404_scoped, check_unique
 from schemas import AdminCreateSchema, AdminUpdateSchema, AdminResponseSchema, PackageResponseSchema
@@ -55,6 +55,10 @@ def create_admin(current_admin):
     err = check_unique(Admin, 'email', data['email'])
     if err: return err
 
+    # ตรวจว่า email ไม่ชนกับ user (cross-table)
+    if User.query.filter_by(email=data['email']).first():
+        return jsonify({'message': 'Email already used by a user'}), 400
+
     if data['role'] == 'admin' and not current_admin.is_super_admin:
         return jsonify({'message': 'Only root admin can create admin role'}), 403
 
@@ -98,6 +102,9 @@ def update_admin(current_admin, admin_id):
     if data.get('email'):
         err = check_unique(Admin, 'email', data['email'], exclude_id=admin.id)
         if err: return err
+        # ตรวจว่า email ไม่ชนกับ user (cross-table)
+        if User.query.filter_by(email=data['email']).first():
+            return jsonify({'message': 'Email already used by a user'}), 400
         admin.email = data['email']
 
     if data.get('password'):

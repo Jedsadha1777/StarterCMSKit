@@ -33,14 +33,12 @@ def sync(user):
     # will be picked up in the next sync (updated_at > server_time)
     server_time = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
 
-    # Filter logic:
+    # Filter logic (ต้องครอบคลุม published→draft ด้วย เพื่อลบที่ mobile):
     #   published + not deleted  → upserted (client adds/updates)
     #   published + deleted      → deleted  (client removes)
-    #   draft (any delete state) → excluded (client never knew about it)
-    # Using status == 'published' covers both cases without leaking drafts.
-    query = Article.query \
-        .filter(Article.updated_at > since) \
-        .filter(Article.status == 'published')
+    #   draft + not deleted      → deleted  (client removes — article ถูก unpublish)
+    #   draft + deleted          → deleted  (client removes)
+    query = Article.query.filter(Article.updated_at > since)
 
     if user.company_id:
         query = query.filter(Article.company_id == user.company_id)
@@ -58,10 +56,12 @@ def sync(user):
     deleted = []
 
     for a in articles:
-        if a.is_deleted:
-            deleted.append(a.public_id)
-        else:
+        # published + ไม่ลบ → upsert
+        # status != published หรือ is_deleted → delete (mobile ลบออก)
+        if a.status == 'published' and not a.is_deleted:
             upserted.append(a.to_dict())
+        else:
+            deleted.append(a.public_id)
 
     result = {
         'sync': {

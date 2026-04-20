@@ -45,12 +45,17 @@ def create_article(admin):
     data, err = load_schema(ArticleCreateSchema)
     if err: return err
 
+    status = data.get('status', 'draft')
+    # ต้องมี permission articles.publish ถ้าจะสร้างเป็น published เลย
+    if status == 'published' and not admin.has_permission('articles', 'publish'):
+        return jsonify({'message': 'Permission denied: cannot publish'}), 403
+
     article = Article(
         title=data['title'],
         content=data['content'],
         admin_id=admin.id,
         company_id=g.active_company.id,
-        status=data.get('status', 'draft'),
+        status=status,
         publish_date=data.get('publish_date'),
     )
 
@@ -92,6 +97,10 @@ def update_article(admin, article_id):
     if data.get('content'):
         article.content = data['content']
     if 'status' in data:
+        # ต้องมี permission articles.publish ถ้าจะ publish
+        if data['status'] == 'published' and article.status != 'published':
+            if not admin.has_permission('articles', 'publish'):
+                return jsonify({'message': 'Permission denied: cannot publish'}), 403
         article.status = data['status']
     if 'publish_date' in data:
         article.publish_date = data['publish_date']

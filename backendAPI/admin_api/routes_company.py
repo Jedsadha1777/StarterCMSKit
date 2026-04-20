@@ -47,6 +47,10 @@ def create_company(admin):
         package = Package.query.get(package_id)
         if not package:
             return jsonify({'message': 'Package not found'}), 400
+    else:
+        # default package_id=1 (default package) ถ้าไม่ระบุ → admin ใน company ใหม่มี permission ทันที
+        default_pkg = Package.query.get(1)
+        package_id = default_pkg.id if default_pkg else None
 
     company = Company(
         name=data['name'],

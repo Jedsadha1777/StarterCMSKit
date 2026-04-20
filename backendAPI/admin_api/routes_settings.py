@@ -64,6 +64,8 @@ def _save_upload(file):
 @admin_required
 def get_settings(admin):
     """Get all settings."""
+    if not admin.is_super_admin:
+        return jsonify({'message': 'Permission denied'}), 403
     return jsonify(Setting.get_all()), 200
 
 
@@ -72,6 +74,8 @@ def get_settings(admin):
 @admin_required
 def update_settings(admin):
     """Update settings (JSON fields)."""
+    if not admin.is_super_admin:
+        return jsonify({'message': 'Permission denied'}), 403
     data = request.get_json()
     if not data:
         return jsonify({'message': 'No data provided'}), 400
@@ -90,6 +94,8 @@ def update_settings(admin):
 @admin_required
 def upload_setting_file(admin, field):
     """Upload logo or favicon file."""
+    if not admin.is_super_admin:
+        return jsonify({'message': 'Permission denied'}), 403
     if field not in ('logo', 'favicon'):
         return jsonify({'message': 'Invalid field'}), 400
 

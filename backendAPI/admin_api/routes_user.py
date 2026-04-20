@@ -46,6 +46,11 @@ def create_user(current_admin):
     err = check_unique(User, 'email', data['email'])
     if err: return err
 
+    # ตรวจว่า email ไม่ชนกับ admin (cross-table)
+    from models import Admin
+    if Admin.query.filter_by(email=data['email']).first():
+        return jsonify({'message': 'Email already used by an admin'}), 400
+
     new_user = User(name=data['name'], email=data['email'], company_id=g.active_company.id)
     new_user.set_password(data['password'])
     db.session.add(new_user)
