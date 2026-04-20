@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'api/api_client.dart';
 import 'local_db.dart';
 import 'connectivity_service.dart';
+import 'app_settings.dart';
 
 class MasterDataService {
   static final MasterDataService _instance = MasterDataService._internal();
@@ -34,6 +35,11 @@ class MasterDataService {
 
       await _db.replaceAllMachineModels(machineModels);
       await _db.replaceAllCustomers(customers);
+
+      // Save date_format setting
+      final settings = data['settings'] as Map<String, dynamic>?;
+      final dateFormat = settings?['date_format'] as String? ?? 'YYYY-MM-DD';
+      await AppSettings().setDateFormat(dateFormat);
 
       return true;
     } catch (e) {

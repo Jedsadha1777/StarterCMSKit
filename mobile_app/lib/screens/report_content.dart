@@ -701,7 +701,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )),
           Positioned(left: cs[34], top: rs[3], width: cs[44] - cs[34], height: rs[4] - rs[3], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF)),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'form-date', readonly: true, value: _formDate, onChanged: (v) => setState(() => _formDate = v))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'form-date', readonly: true, snapMode: _snapMode, value: _formDate, onChanged: (v) => setState(() => _formDate = v))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[0], top: rs[4], width: cs[44] - cs[0], height: rs[7] - rs[4], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -716,7 +716,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               ))),
           Positioned(left: cs[9], top: rs[7], width: cs[44] - cs[9], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name', fields: 'customer_name', required: true, value: _customerNameController.text, onSelected: (v) { if (v != null) { _customerNameController.text = v['name'] as String? ?? ''; setState(() {}); } }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name', fields: 'customer_name', required: true, snapMode: _snapMode, value: _customerNameController.text, onSelected: (v) { if (v != null) { _customerNameController.text = v['name'] as String? ?? ''; setState(() {}); } }))),
           Positioned(left: cs[0], top: rs[8], width: cs[9] - cs[0], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), left: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -725,7 +725,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.top(color: Color(0xFF000000), width: 1, dotted: true), _DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[9], top: rs[8], width: cs[22] - cs[9], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'machine_model', source: 'machines', displayFields: 'code,name', fields: 'machine_model', required: true, value: _machineModelSearch, onSelected: (v) => _machineModelSearch = v?['machine_model'] as String?)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'machine_model', source: 'machines', displayFields: 'code,name', fields: 'machine_model', required: true, snapMode: _snapMode, value: _machineModelSearch, onSelected: (v) => _machineModelSearch = v?['machine_model'] as String?)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[22], top: rs[8], width: cs[29] - cs[22], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -743,7 +743,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[9], top: rs[9], width: cs[22] - cs[9], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'install-date', required: true, value: _installDate, onChanged: (v) => setState(() => _installDate = v))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'install-date', required: true, snapMode: _snapMode, value: _installDate, onChanged: (v) => setState(() => _installDate = v))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[22], top: rs[9], width: cs[29] - cs[22], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -761,7 +761,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               ))),
           Positioned(left: cs[9], top: rs[10], width: cs[22] - cs[9], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'inspection-date', required: true, value: _inspectionDate, onChanged: (v) => setState(() => _inspectionDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'inspection-date', required: true, snapMode: _snapMode, value: _inspectionDate, onChanged: (v) => setState(() => _inspectionDate = v)))),
           Positioned(left: cs[22], top: rs[10], width: cs[29] - cs[22], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -1302,7 +1302,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )),
           Positioned(left: cs[5], top: rs[37], width: cs[18] - cs[5], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-customer-sign', required: true, value: _dateCustomerSign, onChanged: (v) => setState(() => _dateCustomerSign = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-customer-sign', required: true, snapMode: _snapMode, value: _dateCustomerSign, onChanged: (v) => setState(() => _dateCustomerSign = v)))),
           cell(18, 37, 19, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(19, 37, 20, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(20, 37, 21, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
@@ -1317,7 +1317,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               )),
           Positioned(left: cs[28], top: rs[37], width: cs[41] - cs[28], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-engineer-sign', required: true, value: _dateEngineerSign, onChanged: (v) => setState(() => _dateEngineerSign = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-engineer-sign', required: true, snapMode: _snapMode, value: _dateEngineerSign, onChanged: (v) => setState(() => _dateEngineerSign = v)))),
           cell(41, 37, 42, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(42, 37, 43, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(43, 37, 44, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), align: Alignment.topLeft, child: const SizedBox.shrink()),
@@ -1426,7 +1426,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[5], top: rs[39], width: cs[18] - cs[5], height: rs[43] - rs[39], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'customer-sign', initialData: _customerSignBytes, onSigned: (v) => _onCustomerSigned(v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'customer-sign', snapMode: _snapMode, initialData: _customerSignBytes, onSigned: (v) => _onCustomerSigned(v)))),
           cell(18, 39, 19, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(19, 39, 20, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(20, 39, 21, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
@@ -1441,7 +1441,7 @@ class ReportContentWidgetState extends State<ReportContentWidget> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[28], top: rs[39], width: cs[41] - cs[28], height: rs[43] - rs[39], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'engineer-sign', initialData: _engineerSignBytes, onSigned: (v) => _onEngineerSigned(v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'engineer-sign', snapMode: _snapMode, initialData: _engineerSignBytes, onSigned: (v) => _onEngineerSigned(v)))),
           cell(41, 39, 42, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(42, 39, 43, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(43, 39, 44, 40, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),

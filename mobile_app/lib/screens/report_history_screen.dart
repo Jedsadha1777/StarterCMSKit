@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../services/api/report_api.dart';
 import '../services/local_db.dart';
+import '../services/app_settings.dart';
 
 class ReportHistoryScreen extends StatefulWidget {
   const ReportHistoryScreen({super.key});
@@ -139,7 +140,7 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
                         return ListTile(
                           leading: Icon(Icons.description, color: _statusColor(status)),
                           title: Text(report['report_no'] ?? ''),
-                          subtitle: Text('${report['created_at'] ?? ''}\nStatus: $status'),
+                          subtitle: Text('${AppSettings().formatDateTime(report['created_at'] as String?)}\nStatus: $status'),
                           isThreeLine: true,
                           trailing: status == 'email_failed'
                               ? TextButton.icon(

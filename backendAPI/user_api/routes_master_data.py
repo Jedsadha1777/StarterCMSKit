@@ -2,7 +2,7 @@ from flask import jsonify
 from flask_jwt_extended import jwt_required
 from sqlalchemy.orm import joinedload
 from user_api import user_bp
-from models import MachineModel, Customer
+from models import MachineModel, Customer, Setting
 from decorators import user_required
 from schemas import MachineModelResponseSchema, CustomerResponseSchema
 
@@ -24,4 +24,7 @@ def get_master_data(user):
     return jsonify({
         'machine_models': MachineModelResponseSchema().dump(models, many=True),
         'customers': CustomerResponseSchema().dump(customers, many=True),
+        'settings': {
+            'date_format': Setting.get('date_format') or 'YYYY-MM-DD',
+        },
     }), 200

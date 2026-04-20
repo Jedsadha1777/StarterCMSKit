@@ -10,6 +10,7 @@ class FormSearch extends StatefulWidget {
   final String? placeholder;
   final String? value;
   final bool required;
+  final bool snapMode;
   final ValueChanged<Map<String, dynamic>?>? onSelected;
 
   const FormSearch({
@@ -22,6 +23,7 @@ class FormSearch extends StatefulWidget {
     this.placeholder,
     this.value,
     this.required = false,
+    this.snapMode = false,
     this.onSelected,
   });
 
@@ -134,20 +136,29 @@ class _FormSearchState extends State<FormSearch> {
 
   @override
   Widget build(BuildContext context) {
+    final decoration = widget.snapMode
+        ? const InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          )
+        : InputDecoration(
+            border: const OutlineInputBorder(),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            hintText: widget.placeholder ?? 'Search...',
+            suffixIcon: const Icon(Icons.search, size: 18),
+            filled: widget.required,
+            fillColor: widget.required ? Colors.yellow.shade50 : null,
+          );
+
     return CompositedTransformTarget(
       link: _layerLink,
       child: TextField(
         controller: _ctrl,
-        onChanged: _search,
-        decoration: InputDecoration(
-          border: const OutlineInputBorder(),
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          hintText: widget.placeholder ?? 'Search...',
-          suffixIcon: const Icon(Icons.search, size: 18),
-          filled: widget.required,
-          fillColor: widget.required ? Colors.yellow.shade50 : null,
-        ),
+        readOnly: widget.snapMode,
+        onChanged: widget.snapMode ? null : _search,
+        decoration: decoration,
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/app_settings.dart';
 
 class FormDate extends StatefulWidget {
   final String name;
@@ -8,6 +9,7 @@ class FormDate extends StatefulWidget {
   final String? max;
   final bool required;
   final bool readonly;
+  final bool snapMode;
   final ValueChanged<String?>? onChanged;
 
   const FormDate({
@@ -19,6 +21,7 @@ class FormDate extends StatefulWidget {
     this.max,
     this.required = false,
     this.readonly = false,
+    this.snapMode = false,
     this.onChanged,
   });
 
@@ -49,7 +52,14 @@ class _FormDateState extends State<FormDate> {
   void initState() {
     super.initState();
     _selected = widget.value;
-    _ctrl = TextEditingController(text: _selected ?? '');
+    _ctrl = TextEditingController(text: AppSettings().formatDate(_selected));
+    AppSettings().addListener(_onSettingsChanged);
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) {
+      _ctrl.text = AppSettings().formatDate(_selected);
+    }
   }
 
   @override
@@ -57,12 +67,13 @@ class _FormDateState extends State<FormDate> {
     super.didUpdateWidget(oldWidget);
     if (widget.value != oldWidget.value && widget.value != _selected) {
       _selected = widget.value;
-      _ctrl.text = _selected ?? '';
+      _ctrl.text = AppSettings().formatDate(_selected);
     }
   }
 
   @override
   void dispose() {
+    AppSettings().removeListener(_onSettingsChanged);
     _ctrl.dispose();
     super.dispose();
   }
@@ -95,7 +106,7 @@ class _FormDateState extends State<FormDate> {
       if (mounted) {
         setState(() {
           _selected = formatted;
-          _ctrl.text = formatted;
+          _ctrl.text = AppSettings().formatDate(formatted);
         });
       }
     }
@@ -103,20 +114,28 @@ class _FormDateState extends State<FormDate> {
 
   @override
   Widget build(BuildContext context) {
+    final decoration = widget.snapMode
+        ? const InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          )
+        : InputDecoration(
+            border: const OutlineInputBorder(),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            hintText: widget.placeholder ?? 'เลือกวันที่',
+            suffixIcon: const Icon(Icons.calendar_today, size: 18),
+            filled: widget.required,
+            fillColor: widget.required ? Colors.yellow.shade50 : null,
+          );
+
     return TextField(
       controller: _ctrl,
       readOnly: true,
-      onTap: widget.readonly ? null : _pickDate,
+      onTap: (widget.readonly || widget.snapMode) ? null : _pickDate,
       style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16),
-      decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        hintText: widget.placeholder ?? 'เลือกวันที่',
-        suffixIcon: const Icon(Icons.calendar_today, size: 18),
-        filled: widget.required,
-        fillColor: widget.required ? Colors.yellow.shade50 : null,
-      ),
+      decoration: decoration,
     );
   }
 }

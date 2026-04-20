@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'services/connectivity_service.dart';
+import 'services/app_settings.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/articles_screen.dart';
@@ -11,9 +12,10 @@ import 'screens/report_draft_screen.dart';
 import 'screens/report_history_screen.dart';
 import 'screens/profile_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   ConnectivityService().init();
+  await AppSettings().load();
   runApp(const MyApp());
 }
 

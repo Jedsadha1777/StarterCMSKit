@@ -8,6 +8,7 @@ class FormSignature extends StatefulWidget {
   final double? height;
   final String? value;
   final Uint8List? initialData;
+  final bool snapMode;
   final ValueChanged<Uint8List?>? onSigned;
 
   const FormSignature({
@@ -17,6 +18,7 @@ class FormSignature extends StatefulWidget {
     this.height,
     this.value,
     this.initialData,
+    this.snapMode = false,
     this.onSigned,
   });
 
@@ -62,48 +64,57 @@ class _FormSignatureState extends State<FormSignature> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _openSignaturePage(context),
-      child: Container(
-        width: widget.width ?? double.infinity,
-        height: widget.height ?? double.infinity,
-        decoration: BoxDecoration(
-          border: Border.all(color: _hasSigned ? Colors.green : Colors.grey.shade400),
-          borderRadius: BorderRadius.circular(4),
-          color: Colors.grey.shade50,
-        ),
-        child: _hasSigned && _signatureBytes != null
-            ? Stack(
-                children: [
-                  Center(child: Image.memory(_signatureBytes!, fit: BoxFit.contain)),
-                  Positioned(
-                    top: 2, right: 2,
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _signatureBytes = null;
-                          _hasSigned = false;
-                        });
-                        widget.onSigned?.call(null);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        color: Colors.black54,
-                        child: const Icon(Icons.close, size: 14, color: Colors.white),
+    final container = Container(
+      width: widget.width ?? double.infinity,
+      height: widget.height ?? double.infinity,
+      decoration: widget.snapMode
+          ? null
+          : BoxDecoration(
+              border: Border.all(color: _hasSigned ? Colors.green : Colors.grey.shade400),
+              borderRadius: BorderRadius.circular(4),
+              color: Colors.grey.shade50,
+            ),
+      child: _hasSigned && _signatureBytes != null
+          ? (widget.snapMode
+              ? Center(child: Image.memory(_signatureBytes!, fit: BoxFit.contain))
+              : Stack(
+                  children: [
+                    Center(child: Image.memory(_signatureBytes!, fit: BoxFit.contain)),
+                    Positioned(
+                      top: 2, right: 2,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _signatureBytes = null;
+                            _hasSigned = false;
+                          });
+                          widget.onSigned?.call(null);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          color: Colors.black54,
+                          child: const Icon(Icons.close, size: 14, color: Colors.white),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              )
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.draw_outlined, size: 24, color: Colors.grey.shade400),
-                  const SizedBox(height: 4),
-                  Text('Tap to sign', style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
-                ],
-              ),
-      ),
+                  ],
+                ))
+          : (widget.snapMode
+              ? const SizedBox.shrink()
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.draw_outlined, size: 24, color: Colors.grey.shade400),
+                    const SizedBox(height: 4),
+                    Text('Tap to sign', style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
+                  ],
+                )),
+    );
+
+    if (widget.snapMode) return container;
+    return GestureDetector(
+      onTap: () => _openSignaturePage(context),
+      child: container,
     );
   }
 

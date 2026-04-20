@@ -8,9 +8,9 @@
         <v-select v-model="filterStatus" :items="statusOptions" variant="outlined" density="compact" hide-details clearable style="max-width:150px" @update:model-value="handleSearch" />
         <div class="d-flex align-center ga-3" style="flex-shrink: 0;">
           <span class="text-body-2 font-weight-medium text-no-wrap">From:</span>
-          <DatePicker v-model="dateFrom" label="From" @update:model-value="handleSearch" />
+          <DatePicker v-model="dateFrom" label="From" density="compact" @update:model-value="handleSearch" />
           <span class="text-body-2 font-weight-medium text-no-wrap">To:</span>
-          <DatePicker v-model="dateTo" label="To" @update:model-value="handleSearch" />
+          <DatePicker v-model="dateTo" label="To" density="compact" @update:model-value="handleSearch" />
         </div>
         <v-btn color="primary" variant="flat" @click="load"><v-icon start>mdi-magnify</v-icon>Search</v-btn>
       </div>

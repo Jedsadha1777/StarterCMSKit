@@ -283,7 +283,7 @@ class LocalDb {
     required Map<String, dynamic> formData,
   }) async {
     final db = await database;
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
     await db.insert(
       'report_drafts',
       {
@@ -327,7 +327,7 @@ class LocalDb {
     final db = await database;
     final updates = <String, dynamic>{
       'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     };
     if (reportNo != null) updates['report_no'] = reportNo;
     if (reportPublicId != null) updates['report_public_id'] = reportPublicId;
@@ -338,7 +338,7 @@ class LocalDb {
     final db = await database;
     await db.update('report_drafts', {
       'pdf_data': pdfData,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     }, where: 'draft_id = ?', whereArgs: [draftId]);
   }
 
@@ -346,7 +346,7 @@ class LocalDb {
     final db = await database;
     await db.update('report_drafts', {
       'pdf_data': null,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
     }, where: 'draft_id = ?', whereArgs: [draftId]);
   }
 

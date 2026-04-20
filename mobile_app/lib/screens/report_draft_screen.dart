@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/local_db.dart';
+import '../services/app_settings.dart';
 
 class ReportDraftScreen extends StatefulWidget {
   const ReportDraftScreen({super.key});
@@ -65,7 +66,7 @@ class _ReportDraftScreenState extends State<ReportDraftScreen> {
                     return ListTile(
                       leading: const Icon(Icons.edit_document, color: Colors.orange),
                       title: Text('Draft ${index + 1}'),
-                      subtitle: Text('Updated: ${draft['updated_at'] ?? ''}'),
+                      subtitle: Text('Updated: ${AppSettings().formatDateTime(draft['updated_at'] as String?)}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

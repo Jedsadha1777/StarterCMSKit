@@ -6,6 +6,7 @@
         v-bind="props"
         :label="label"
         variant="outlined"
+        :density="density"
         hide-details
         readonly
         clearable
@@ -32,6 +33,7 @@ export default {
     modelValue: { type: String, default: '' },
     label: { type: String, default: 'Date' },
     style: { type: String, default: 'min-width:180px;max-width:220px' },
+    density: { type: String, default: 'default' },
   },
   emits: ['update:modelValue'],
   setup(props, { emit }) {
