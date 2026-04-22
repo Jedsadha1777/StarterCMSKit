@@ -7,6 +7,7 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/articles_screen.dart';
 import 'screens/report_screen.dart';
+import 'screens/report_screen2.dart';
 import 'screens/model_selection_screen.dart';
 import 'screens/report_draft_screen.dart';
 import 'screens/report_history_screen.dart';
@@ -91,6 +92,7 @@ class MyApp extends StatelessWidget {
           '/home': (context) => const HomeScreen(),
           '/articles': (context) => const ArticlesScreen(),
           '/report': (context) => const ReportScreen(),
+          '/report2': (context) => const ReportScreen2(),
           '/model-selection': (context) => const ModelSelectionScreen(),
           '/report-draft': (context) => const ReportDraftScreen(),
           '/report-history': (context) => const ReportHistoryScreen(),

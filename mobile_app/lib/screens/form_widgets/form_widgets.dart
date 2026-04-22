@@ -5,6 +5,7 @@ export 'form_select.dart';
 export 'form_checkbox.dart';
 export 'form_radio.dart';
 export 'form_date.dart';
+export 'form_time.dart';
 export 'form_signature.dart';
 export 'form_image_upload.dart';
 export 'form_file.dart';
