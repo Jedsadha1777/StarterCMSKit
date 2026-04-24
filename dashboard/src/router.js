@@ -15,6 +15,9 @@ import InspectionItems from './views/InspectionItems.vue'
 import InspectionItemForm from './views/InspectionItemForm.vue'
 import MachineModels from './views/MachineModels.vue'
 import MachineModelForm from './views/MachineModelForm.vue'
+import MachineParts from './views/MachineParts.vue'
+import MachinePartForm from './views/MachinePartForm.vue'
+import PartsSummary from './views/PartsSummary.vue'
 import Reports from './views/Reports.vue'
 import Profile from './views/Profile.vue'
 import Settings from './views/Settings.vue'
@@ -34,12 +37,16 @@ const routes = [
   { path: '/customers', name: 'Customers', component: Customers, meta: { requiresAuth: true, requires: 'customers.view', title: 'Customers' } },
   { path: '/customers/new', name: 'CustomerNew', component: CustomerForm, meta: { requiresAuth: true, requires: 'customers.create', title: 'New Customer' } },
   { path: '/customers/:id/edit', name: 'CustomerEdit', component: CustomerForm, meta: { requiresAuth: true, requires: 'customers.edit', title: 'Edit Customer' } },
-  { path: '/inspection-items', name: 'InspectionItems', component: InspectionItems, meta: { requiresAuth: true, requires: 'inspection_items.view', title: 'Inspection Items' } },
-  { path: '/inspection-items/new', name: 'InspectionItemNew', component: InspectionItemForm, meta: { requiresAuth: true, requires: 'inspection_items.create', title: 'New Inspection Item' } },
-  { path: '/inspection-items/:id/edit', name: 'InspectionItemEdit', component: InspectionItemForm, meta: { requiresAuth: true, requires: 'inspection_items.edit', title: 'Edit Inspection Item' } },
+  { path: '/inspection-items', name: 'InspectionItems', component: InspectionItems, meta: { requiresAuth: true, requires: 'inspection_items.view', title: 'Machine Inspection' } },
+  { path: '/inspection-items/new', name: 'InspectionItemNew', component: InspectionItemForm, meta: { requiresAuth: true, requires: 'inspection_items.create', title: 'New Machine Inspection' } },
+  { path: '/inspection-items/:id/edit', name: 'InspectionItemEdit', component: InspectionItemForm, meta: { requiresAuth: true, requires: 'inspection_items.edit', title: 'Edit Machine Inspection' } },
   { path: '/machine-models', name: 'MachineModels', component: MachineModels, meta: { requiresAuth: true, requires: 'machine_models.view', title: 'Machine Models' } },
   { path: '/machine-models/new', name: 'MachineModelNew', component: MachineModelForm, meta: { requiresAuth: true, requires: 'machine_models.create', title: 'New Machine Model' } },
   { path: '/machine-models/:id/edit', name: 'MachineModelEdit', component: MachineModelForm, meta: { requiresAuth: true, requires: 'machine_models.edit', title: 'Edit Machine Model' } },
+  { path: '/parts', name: 'MachineParts', component: MachineParts, meta: { requiresAuth: true, requires: 'parts.view', title: 'Machine Parts' } },
+  { path: '/parts/new', name: 'MachinePartNew', component: MachinePartForm, meta: { requiresAuth: true, requires: 'parts.create', title: 'New Machine Part' } },
+  { path: '/parts/:id/edit', name: 'MachinePartEdit', component: MachinePartForm, meta: { requiresAuth: true, requires: 'parts.edit', title: 'Edit Machine Part' } },
+  { path: '/parts-summary', name: 'PartsSummary', component: PartsSummary, meta: { requiresAuth: true, requires: 'parts.view', title: 'Parts Summary' } },
   { path: '/reports', name: 'Reports', component: Reports, meta: { requiresAuth: true, requires: 'reports.view', title: 'Reports' } },
   { path: '/settings', name: 'Settings', component: Settings, meta: { requiresAuth: true, requires: 'settings.view', title: 'Settings' } },
   { path: '/profile', name: 'Profile', component: Profile, meta: { requiresAuth: true, title: 'Profile' } },

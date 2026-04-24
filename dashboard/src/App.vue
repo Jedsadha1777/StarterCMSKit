@@ -38,7 +38,7 @@
         </v-btn>
       </v-app-bar>
 
-      <v-navigation-drawer permanent width="100">
+      <v-navigation-drawer permanent width="105">
         <v-list nav class="d-flex flex-column align-center pa-2" style="gap: 0;">
           <template v-for="item in navItems" :key="item.to">
             <v-list-item :to="item.to" :active="isActive(item)" color="primary" class="sidebar-item text-center pa-2" rounded="lg">
@@ -141,8 +141,10 @@ export default {
       { to: '/users',     icon: 'mdi-account-group',   title: 'Users',      match: '/users',     requires: 'users.view' },
       { to: '/admins',    icon: 'mdi-shield-account',  title: 'Admins',     match: '/admins',    requires: 'admins.view' },
       { to: '/customers', icon: 'mdi-account-multiple', title: 'Customers',  match: '/customers', requires: 'customers.view' },
-      { to: '/inspection-items', icon: 'mdi-clipboard-check', title: 'Inspection',  match: '/inspection-items', requires: 'inspection_items.view' },
+      { to: '/inspection-items', icon: 'mdi-clipboard-check', title: 'Machine Inspection',  match: '/inspection-items', requires: 'inspection_items.view' },
       { to: '/machine-models', icon: 'mdi-cog-outline', title: 'Machine Models', match: '/machine-models', requires: 'machine_models.view' },
+      { to: '/parts', icon: 'mdi-nut', title: 'Machine Parts', match: '/parts', requires: 'parts.view' },
+      { to: '/parts-summary', icon: 'mdi-chart-bar', title: 'Parts Summary', match: '/parts-summary', requires: 'parts.view' },
       { to: '/reports', icon: 'mdi-file-document-outline', title: 'Reports', match: '/reports', requires: 'reports.view' },
     ]
 
@@ -162,7 +164,9 @@ export default {
 
     const isActive = (item) => {
       if (item.match === '/') return route.path === '/'
-      return route.path.startsWith(item.match)
+      if (route.path === item.match) return true
+      // Match only child paths (e.g. /parts/new) — not sibling prefixes like /parts-summary
+      return route.path.startsWith(item.match + '/')
     }
 
     const doLogout = async () => { await api.logout() }
@@ -246,7 +250,7 @@ export default {
 
 <style scoped>
 .sidebar-item {
-  width: 80px;
+  width: 85px;
   min-height: auto;
 }
 .sidebar-item :deep(.v-list-item__content) {

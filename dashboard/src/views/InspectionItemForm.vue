@@ -1,5 +1,5 @@
 <template>
-  <FormPage :title="isEdit ? 'Edit Inspection Item' : 'Register Inspection Item'" backTo="/inspection-items" :error="error" :loading="loading" @submit="handleSubmit">
+  <FormPage :title="isEdit ? 'Edit Machine Inspection' : 'Register Machine Inspection'" backTo="/inspection-items" :error="error" :loading="loading" @submit="handleSubmit">
     <v-text-field v-model="form.item_code" label="Item Code *" variant="outlined" required class="mb-4" :disabled="isEdit" :rules="[itemCodeRule]" hint="English letters, numbers, hyphens or underscores only (no spaces)" persistent-hint />
     <v-text-field v-model="form.item_name" label="Item Name *" variant="outlined" required class="mb-4" />
     <v-text-field v-model="form.spec" label="Spec" variant="outlined" class="mb-4" />

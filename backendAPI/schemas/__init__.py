@@ -417,3 +417,44 @@ class LoginSchema(Schema):
         unknown = EXCLUDE
     email = fields.String(required=True, validate=validate.Length(min=1))
     password = fields.String(required=True, validate=validate.Length(min=1))
+
+
+# ── Parts ──
+
+class PartsCreateSchema(Schema):
+    class Meta:
+        unknown = EXCLUDE
+    parts_code = fields.String(required=True, validate=validate.Length(min=1, max=100))
+    parts_name = fields.String(required=True, validate=validate.Length(min=1, max=255))
+    unit_price = fields.Decimal(load_default=0, places=2, as_string=False)
+
+
+class PartsUpdateSchema(Schema):
+    class Meta:
+        unknown = EXCLUDE
+    parts_code = fields.String(validate=validate.Length(min=1, max=100))
+    parts_name = fields.String(validate=validate.Length(min=1, max=255))
+    unit_price = fields.Decimal(places=2, as_string=False)
+
+
+class PartsResponseSchema(Schema):
+    id = fields.Method('get_id')
+    parts_code = fields.String()
+    parts_name = fields.String()
+    unit_price = fields.Method('get_unit_price')
+    created_by = fields.Method('get_created_by')
+    created_by_name = fields.Method('get_created_by_name')
+    created_at = fields.DateTime(format='iso')
+    updated_at = fields.DateTime(format='iso')
+
+    def get_id(self, obj):
+        return obj.public_id
+
+    def get_unit_price(self, obj):
+        return float(obj.unit_price) if obj.unit_price is not None else 0.0
+
+    def get_created_by(self, obj):
+        return obj.creator.public_id if obj.creator else None
+
+    def get_created_by_name(self, obj):
+        return obj.creator.name if obj.creator else None

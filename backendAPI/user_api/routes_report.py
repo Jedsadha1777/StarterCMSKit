@@ -6,11 +6,12 @@ from flask_jwt_extended import jwt_required
 from user_api import user_bp
 from extensions import db
 from sqlalchemy.orm import joinedload
-from models import Report, MachineModel, Customer, generate_report_no
+from models import Report, MachineModel, Customer, Parts, PartsConsumption, generate_report_no
 from decorators import user_required
 from utils import load_schema, paginate_query, apply_sorting, format_paginated
 from schemas import ReportCreateSchema, ReportResponseSchema
 from services.email_service import send_report_email
+from services.parts_extractor import extract_parts_from_form_data
 from config import UPLOAD_DIR, MAX_UPLOAD_BYTES
 
 
@@ -59,6 +60,36 @@ def submit_report(user):
         status='pending_pdf',
     )
     db.session.add(report)
+    db.session.flush()  # get report.id before inserting consumption rows
+
+    # Extract parts used from form_data → insert one parts_consumption row per used part.
+    parts_used = extract_parts_from_form_data(data['form_data'])
+    if parts_used:
+        codes = [p['parts_code'] for p in parts_used]
+        master_map = {
+            m.parts_code: m.id
+            for m in Parts.query.filter(
+                Parts.company_id == user.company_id,
+                Parts.parts_code.in_(codes),
+                Parts.is_deleted == False,
+            ).all()
+        }
+        consumption_dt = None
+        if report.inspected_at:
+            consumption_dt = report.inspected_at.date() if hasattr(report.inspected_at, 'date') else report.inspected_at
+
+        for p in parts_used:
+            db.session.add(PartsConsumption(
+                report_id=report.id,
+                company_id=user.company_id,
+                parts_id=master_map.get(p['parts_code']),  # None if not in master
+                parts_code=p['parts_code'],
+                parts_name=p['parts_name'],
+                qty=p['qty'],
+                unit_price=p['unit_price'],
+                consumption_dt=consumption_dt,
+            ))
+
     db.session.commit()
 
     return jsonify(ReportResponseSchema().dump(report)), 201

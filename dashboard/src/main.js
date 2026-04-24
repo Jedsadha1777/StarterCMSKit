@@ -39,5 +39,18 @@ style.textContent = `
   .v-table tbody tr:hover { background: #e8e8e8 !important; }
   .v-table tbody td { padding-top: 12px !important; padding-bottom: 12px !important; }
   .v-toolbar__content { padding-left: 16px !important; padding-right: 16px !important; }
+
+  /* Shrink inline icons inside text fields (prepend, append, clear).
+     Target .v-icon--size-default specifically to beat Vuetify's own rule. */
+  .v-field__prepend-inner .v-icon,
+  .v-field__prepend-inner .v-icon--size-default,
+  .v-field__append-inner .v-icon,
+  .v-field__append-inner .v-icon--size-default,
+  .v-field__clearable .v-icon,
+  .v-field__clearable .v-icon--size-default {
+    font-size: 18px !important;
+    width: 18px !important;
+    height: 18px !important;
+  }
 `
 document.head.appendChild(style)

@@ -20,7 +20,9 @@ from .import_history import ImportHistory
 from .inspection_item import InspectionItem
 from .machine_model import MachineModel, machine_model_inspection_items
 from .report import Report, ReportCounter, generate_report_no
+from .parts import Parts, PartsConsumption
 
 __all__ = ['Company', 'Admin', 'AdminRole', 'User', 'Article', 'TokenBlacklist', 'Summary', 'AdminSession', 'Setting',
            'Package', 'PackageLimit', 'PackageRolePermission', 'Customer', 'ImportHistory', 'InspectionItem',
-           'MachineModel', 'machine_model_inspection_items', 'Report', 'ReportCounter', 'generate_report_no']
+           'MachineModel', 'machine_model_inspection_items', 'Report', 'ReportCounter', 'generate_report_no',
+           'Parts', 'PartsConsumption']

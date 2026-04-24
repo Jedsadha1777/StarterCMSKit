@@ -58,7 +58,7 @@ import { ref, watch, computed } from 'vue'
 import api from '../api'
 import { useSiteSettings } from '../composables/useSiteSettings'
 
-const RESOURCES = ['customers', 'machine-models', 'inspection-items']
+const RESOURCES = ['customers', 'machine-models', 'inspection-items', 'parts']
 
 export default {
   props: {
@@ -81,6 +81,7 @@ export default {
       'customers':        { get: api.getImportHistory,              download: api.downloadImportFile,              remove: api.deleteImportHistory },
       'machine-models':   { get: api.getMachineModelImportHistory,  download: api.downloadMachineModelImportFile,  remove: api.deleteMachineModelImportHistory },
       'inspection-items': { get: api.getInspectionImportHistory,    download: api.downloadInspectionImportFile,    remove: api.deleteInspectionImportHistory },
+      'parts':            { get: api.getPartsImportHistory,         download: api.downloadPartsImportFile,         remove: api.deletePartsImportHistory },
     }
     const ep = computed(() => endpoints[props.resource])
 

@@ -32,7 +32,7 @@
           <v-card variant="outlined">
             <v-card-text class="text-center">
               <div class="text-h3 text-primary font-weight-bold">{{ stats.inspection_items }}</div>
-              <div class="text-overline">Inspection Items</div>
+              <div class="text-overline">Machine Inspection</div>
             </v-card-text>
           </v-card>
         </v-col>
