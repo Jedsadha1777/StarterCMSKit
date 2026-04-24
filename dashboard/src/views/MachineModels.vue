@@ -46,9 +46,7 @@
 
   <ImportHistoryDialog
     :visible="showHistory"
-    :apiGet="api.getMachineModelImportHistory"
-    :apiDownload="api.downloadMachineModelImportFile"
-    :apiDelete="api.deleteMachineModelImportHistory"
+    resource="machine-models"
     @close="showHistory = false"
   />
 </template>

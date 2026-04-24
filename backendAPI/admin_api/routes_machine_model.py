@@ -63,6 +63,10 @@ def create_machine_model(admin):
     if not admin.has_permission('machine_models', 'create'):
         return jsonify({'message': 'Permission denied'}), 403
 
+    current_count = MachineModel.query.filter(MachineModel.company_id == g.active_company.id).count()
+    if not admin.check_limit('machine_models', current_count):
+        return jsonify({'message': 'Machine model limit reached for your package'}), 403
+
     data, err = load_schema(MachineModelCreateSchema)
     if err: return err
 
@@ -230,6 +234,12 @@ def import_machine_model_confirm(admin):
     model_codes = [r['model_code'] for r in selected_rows]
     existing = MachineModel.query.filter(MachineModel.model_code.in_(model_codes), MachineModel.company_id == g.active_company.id).all()
     existing_map = {m.model_code: m for m in existing}
+
+    new_rows_count = sum(1 for r in selected_rows if r['model_code'] not in existing_map)
+    if new_rows_count > 0:
+        current_count = MachineModel.query.filter(MachineModel.company_id == g.active_company.id).count()
+        if not admin.check_limit('machine_models', current_count, add_count=new_rows_count):
+            return jsonify({'message': f'Import would exceed machine model limit (current: {current_count}, adding: {new_rows_count})'}), 403
 
     created = 0
     updated = 0

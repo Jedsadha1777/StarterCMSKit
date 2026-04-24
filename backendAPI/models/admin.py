@@ -45,21 +45,11 @@ class Admin(PasswordMixin, db.Model):
             action=action
         ).first() is not None
 
-    def check_limit(self, resource, current_count):
-        if self.is_super_admin:
-            return True
-        if not self.company or not self.company.package_id:
+    def check_limit(self, resource, current_count, add_count=1):
+        """Delegate to company-level limit check. Admin with no company is denied."""
+        if not self.company:
             return False
-        from models.package import PackageLimit
-        limit = PackageLimit.query.filter_by(
-            package_id=self.company.package_id,
-            resource=resource
-        ).first()
-        if not limit:
-            return True
-        if limit.max_value == UNLIMITED:
-            return True
-        return current_count < limit.max_value
+        return self.company.check_limit(resource, current_count, add_count)
 
     def get_permissions(self):
         if self.is_super_admin:

@@ -51,6 +51,10 @@ def create_customer(admin):
     if not admin.has_permission('customers', 'create'):
         return jsonify({'message': 'Permission denied'}), 403
 
+    current_count = Customer.query.filter(Customer.company_id == g.active_company.id).count()
+    if not admin.check_limit('customers', current_count):
+        return jsonify({'message': 'Customer limit reached for your package'}), 403
+
     data, err = load_schema(CustomerCreateSchema)
     if err: return err
 

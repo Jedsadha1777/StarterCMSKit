@@ -42,6 +42,7 @@
 
   <ImportHistoryDialog
     :visible="showHistory"
+    resource="customers"
     @close="showHistory = false"
   />
 </template>

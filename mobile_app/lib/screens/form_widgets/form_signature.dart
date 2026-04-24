@@ -67,13 +67,6 @@ class _FormSignatureState extends State<FormSignature> {
     final container = Container(
       width: widget.width ?? double.infinity,
       height: widget.height ?? double.infinity,
-      decoration: widget.snapMode
-          ? null
-          : BoxDecoration(
-              border: Border.all(color: _hasSigned ? Colors.green : Colors.grey.shade400),
-              borderRadius: BorderRadius.circular(4),
-              color: Colors.grey.shade50,
-            ),
       child: _hasSigned && _signatureBytes != null
           ? (widget.snapMode
               ? Center(child: Image.memory(_signatureBytes!, fit: BoxFit.contain))
@@ -114,6 +107,7 @@ class _FormSignatureState extends State<FormSignature> {
     if (widget.snapMode) return container;
     return GestureDetector(
       onTap: () => _openSignaturePage(context),
+      behavior: HitTestBehavior.opaque,
       child: container,
     );
   }

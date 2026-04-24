@@ -37,6 +37,10 @@ def create_user(current_admin):
     if not current_admin.has_permission('users', 'create'):
         return jsonify({'message': 'Permission denied'}), 403
 
+    current_count = User.query.filter(User.company_id == g.active_company.id).count()
+    if not current_admin.check_limit('users', current_count):
+        return jsonify({'message': 'User limit reached for your package'}), 403
+
     data, err = load_schema(UserCreateSchema)
     if err: return err
 

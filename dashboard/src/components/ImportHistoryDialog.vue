@@ -58,9 +58,16 @@ import { ref, watch, computed } from 'vue'
 import api from '../api'
 import { useSiteSettings } from '../composables/useSiteSettings'
 
+const RESOURCES = ['customers', 'machine-models', 'inspection-items']
+
 export default {
   props: {
     visible: { type: Boolean, default: false },
+    resource: {
+      type: String,
+      required: true,
+      validator: v => RESOURCES.includes(v),
+    },
   },
   emits: ['close'],
   setup(props) {
@@ -69,6 +76,13 @@ export default {
     const loading = ref(false)
     const page = ref(1)
     const totalPages = ref(0)
+    // Defer endpoint lookup to setup (avoid TDZ with circular import through router)
+    const endpoints = {
+      'customers':        { get: api.getImportHistory,              download: api.downloadImportFile,              remove: api.deleteImportHistory },
+      'machine-models':   { get: api.getMachineModelImportHistory,  download: api.downloadMachineModelImportFile,  remove: api.deleteMachineModelImportHistory },
+      'inspection-items': { get: api.getInspectionImportHistory,    download: api.downloadInspectionImportFile,    remove: api.deleteInspectionImportHistory },
+    }
+    const ep = computed(() => endpoints[props.resource])
 
     const visiblePages = computed(() => {
       const pages = []
@@ -81,7 +95,7 @@ export default {
     async function load() {
       loading.value = true
       try {
-        const { data } = await api.getImportHistory({ page: page.value, per_page: 10 })
+        const { data } = await ep.value.get({ page: page.value, per_page: 10 })
         items.value = data.histories
         totalPages.value = data.pages
       } catch { /* ignore */ }
@@ -92,7 +106,7 @@ export default {
 
     const download = async (item) => {
       try {
-        const { data } = await api.downloadImportFile(item.id)
+        const { data } = await ep.value.download(item.id)
         const url = URL.createObjectURL(data)
         const a = document.createElement('a')
         a.href = url
@@ -104,7 +118,7 @@ export default {
 
     const remove = async (item) => {
       if (!confirm(`Delete import history "${item.original_filename}"?`)) return
-      try { await api.deleteImportHistory(item.id); load() } catch { alert('Failed to delete') }
+      try { await ep.value.remove(item.id); load() } catch { alert('Failed to delete') }
     }
 
     watch(() => props.visible, (val) => {

@@ -23,6 +23,25 @@ class Company(db.Model):
     def is_root(self):
         return self.parent_id == 0
 
+    def check_limit(self, resource, current_count, add_count=1):
+        """True if adding `add_count` more items stays within this company's package limit.
+        Root companies (parent_id=0) bypass all limits."""
+        if self.is_root:
+            return True
+        if not self.package_id:
+            return False
+        from models.package import PackageLimit
+        _UNLIMITED = -1
+        limit = PackageLimit.query.filter_by(
+            package_id=self.package_id,
+            resource=resource
+        ).first()
+        if not limit:
+            return True
+        if limit.max_value == _UNLIMITED:
+            return True
+        return (current_count + add_count) <= limit.max_value
+
     def to_dict(self):
         return {
             'id': self.public_id,

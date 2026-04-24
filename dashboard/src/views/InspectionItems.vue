@@ -43,9 +43,7 @@
 
   <ImportHistoryDialog
     :visible="showHistory"
-    :apiGet="api.getInspectionImportHistory"
-    :apiDownload="api.downloadInspectionImportFile"
-    :apiDelete="api.deleteInspectionImportHistory"
+    resource="inspection-items"
     @close="showHistory = false"
   />
 </template>

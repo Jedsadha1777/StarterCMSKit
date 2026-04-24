@@ -51,6 +51,10 @@ def create_inspection_item(admin):
     if not admin.has_permission('inspection_items', 'create'):
         return jsonify({'message': 'Permission denied'}), 403
 
+    current_count = InspectionItem.query.filter(InspectionItem.company_id == g.active_company.id).count()
+    if not admin.check_limit('inspection_items', current_count):
+        return jsonify({'message': 'Inspection item limit reached for your package'}), 403
+
     data, err = load_schema(InspectionItemCreateSchema)
     if err: return err
 
@@ -218,6 +222,12 @@ def import_inspection_confirm(admin):
     item_codes = [r['item_code'] for r in selected_rows]
     existing = InspectionItem.query.filter(InspectionItem.item_code.in_(item_codes), InspectionItem.company_id == g.active_company.id).all()
     existing_map = {i.item_code: i for i in existing}
+
+    new_rows_count = sum(1 for r in selected_rows if r['item_code'] not in existing_map)
+    if new_rows_count > 0:
+        current_count = InspectionItem.query.filter(InspectionItem.company_id == g.active_company.id).count()
+        if not admin.check_limit('inspection_items', current_count, add_count=new_rows_count):
+            return jsonify({'message': f'Import would exceed inspection item limit (current: {current_count}, adding: {new_rows_count})'}), 403
 
     created = 0
     updated = 0

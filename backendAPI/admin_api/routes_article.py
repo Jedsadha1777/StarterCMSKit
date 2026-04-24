@@ -42,6 +42,13 @@ def create_article(admin):
     if not admin.has_permission('articles', 'create'):
         return jsonify({'message': 'Permission denied'}), 403
 
+    current_count = Article.query.filter(
+        Article.company_id == g.active_company.id,
+        Article.is_deleted == False
+    ).count()
+    if not admin.check_limit('articles', current_count):
+        return jsonify({'message': 'Article limit reached for your package'}), 403
+
     data, err = load_schema(ArticleCreateSchema)
     if err: return err
 

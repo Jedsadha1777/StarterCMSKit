@@ -88,19 +88,11 @@ class _FormImageUploadState extends State<FormImageUpload> {
 
   @override
   Widget build(BuildContext context) {
-    final w = widget.width ?? 150;
-    final h = widget.height ?? 150;
-
+    // ถ้า caller ไม่ส่ง width/height → ใช้ infinity เพื่อ fill parent constraints
+    // (Container จะถูก clamp ตาม max ของ parent — ใช้ได้กับ parent ที่ bounded เช่น Positioned/SizedBox)
     return Container(
-      width: w,
-      height: h,
-      decoration: BoxDecoration(
-        border: Border.all(
-          color: widget.required && !_hasImage ? Colors.orange.shade300 : Colors.grey.shade400,
-        ),
-        borderRadius: BorderRadius.circular(4),
-        color: Colors.grey.shade50,
-      ),
+      width: widget.width ?? double.infinity,
+      height: widget.height ?? double.infinity,
       child: _hasImage ? _buildPreview() : _buildButtons(),
     );
   }

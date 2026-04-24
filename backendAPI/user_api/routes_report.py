@@ -25,6 +25,10 @@ def submit_report(user):
     data, err = load_schema(ReportCreateSchema)
     if err: return err
 
+    current_count = Report.query.filter(Report.company_id == user.company_id).count()
+    if not user.company.check_limit('reports', current_count):
+        return jsonify({'message': 'Report limit reached for your package'}), 403
+
     machine_model = MachineModel.query.filter_by(
         public_id=data['machine_model_id'],
         company_id=user.company_id,

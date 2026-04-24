@@ -46,6 +46,10 @@ def create_admin(current_admin):
     if not current_admin.has_permission('admins', 'create'):
         return jsonify({'message': 'Permission denied'}), 403
 
+    current_count = Admin.query.filter(Admin.company_id == g.active_company.id).count()
+    if not current_admin.check_limit('admins', current_count):
+        return jsonify({'message': 'Admin limit reached for your package'}), 403
+
     data, err = load_schema(AdminCreateSchema)
     if err: return err
 
