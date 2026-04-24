@@ -4,7 +4,7 @@ annotated-types==0.7.0
 anyio==4.11.0
 archspec @ file:///home/conda/feedstock_root/build_artifacts/archspec_1737352602016/work
 attacut==1.0.6
-bcrypt==5.0.0
+bcrypt==4.0.1
 blinker==1.9.0
 blis==1.2.0
 boltons @ file:///home/conda/feedstock_root/build_artifacts/boltons_1733827268945/work
