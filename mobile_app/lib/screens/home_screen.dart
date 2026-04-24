@@ -105,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
             _menuButton(
               icon: Icons.assignment,
               label: 'Report 2',
-              onPressed: () => Navigator.pushNamed(context, '/report2'),
+              onPressed: () => Navigator.pushNamed(context, '/model-selection', arguments: {'target': '/report2'}),
             ),
             const SizedBox(height: 16),
             _menuButton(

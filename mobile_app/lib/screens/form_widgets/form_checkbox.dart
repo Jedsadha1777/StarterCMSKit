@@ -89,6 +89,8 @@ class _FormCheckboxState extends State<FormCheckbox> {
   Widget _buildSingle() {
     final checkbox = Checkbox(
       value: _singleValue,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
       onChanged: widget.disabled
           ? null
           : (v) {
@@ -115,6 +117,8 @@ class _FormCheckboxState extends State<FormCheckbox> {
         children: [
           Checkbox(
             value: _selected.contains(opt),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
             onChanged: widget.disabled
                 ? null
                 : (v) {
@@ -139,6 +143,8 @@ class _FormCheckboxState extends State<FormCheckbox> {
         children: [
           Checkbox(
             value: _selected.contains('Other'),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
             onChanged: widget.disabled
                 ? null
                 : (v) {

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'report_content.dart';
+import 'report_content2.dart';
 import 'preview_shell.dart';
 
 class ReportScreen extends StatefulWidget {
@@ -10,7 +10,7 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
-  final _contentKey = GlobalKey<ReportContentWidgetState>();
+  final _contentKey = GlobalKey<ReportContentWidgetState2>();
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +21,7 @@ class _ReportScreenState extends State<ReportScreen> {
     return PreviewShell(
       pagePadding: const EdgeInsets.all(5),
       pages: [
-        ReportContentWidget(
+        ReportContentWidget2(
           key: _contentKey,
           machineModel: machineModel,
           draftData: draftData,

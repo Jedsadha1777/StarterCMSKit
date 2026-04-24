@@ -44,15 +44,31 @@ class FormImageUpload extends StatefulWidget {
 class _FormImageUploadState extends State<FormImageUpload> {
   final _picker = ImagePicker();
   XFile? _pickedFile;
+  String? _initialPath;
 
-  bool get _hasImage => _pickedFile != null;
+  @override
+  void initState() {
+    super.initState();
+    _initialPath = widget.value;
+  }
+
+  @override
+  void didUpdateWidget(covariant FormImageUpload oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value && _pickedFile == null) {
+      _initialPath = widget.value;
+    }
+  }
+
+  bool get _hasImage => _pickedFile != null || (_initialPath != null && _initialPath!.isNotEmpty);
+  String get _displayPath => _pickedFile?.path ?? _initialPath!;
   bool get _showUpload => widget.source == 'upload' || widget.source == 'both';
   bool get _showCamera => widget.source == 'camera' || widget.source == 'both';
 
   Future<void> _pickFromGallery() async {
     final picked = await _picker.pickImage(source: ImageSource.gallery);
     if (picked != null) {
-      setState(() => _pickedFile = picked);
+      setState(() { _pickedFile = picked; _initialPath = null; });
       widget.onPicked?.call(picked);
     }
   }
@@ -60,13 +76,13 @@ class _FormImageUploadState extends State<FormImageUpload> {
   Future<void> _pickFromCamera() async {
     final picked = await _picker.pickImage(source: ImageSource.camera);
     if (picked != null) {
-      setState(() => _pickedFile = picked);
+      setState(() { _pickedFile = picked; _initialPath = null; });
       widget.onPicked?.call(picked);
     }
   }
 
   void _clear() {
-    setState(() => _pickedFile = null);
+    setState(() { _pickedFile = null; _initialPath = null; });
     widget.onPicked?.call(null);
   }
 
@@ -94,8 +110,8 @@ class _FormImageUploadState extends State<FormImageUpload> {
       fit: StackFit.expand,
       children: [
         kIsWeb
-            ? Image.network(_pickedFile!.path, fit: BoxFit.contain)
-            : Image.file(File(_pickedFile!.path), fit: BoxFit.contain),
+            ? Image.network(_displayPath, fit: BoxFit.contain)
+            : Image.file(File(_displayPath), fit: BoxFit.contain),
         Positioned(
           top: 2, right: 2,
           child: GestureDetector(

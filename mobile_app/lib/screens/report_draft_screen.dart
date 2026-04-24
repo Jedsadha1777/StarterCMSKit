@@ -65,7 +65,7 @@ class _ReportDraftScreenState extends State<ReportDraftScreen> {
                     final draft = _drafts[index];
                     return ListTile(
                       leading: const Icon(Icons.edit_document, color: Colors.orange),
-                      title: Text('Draft ${index + 1}'),
+                      title: Text('Draft ${_drafts.length - index}'),
                       subtitle: Text('Updated: ${AppSettings().formatDateTime(draft['updated_at'] as String?)}'),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,

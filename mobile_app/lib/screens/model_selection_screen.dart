@@ -30,6 +30,8 @@ class _ModelSelectionScreenState extends State<ModelSelectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final targetRoute = (args?['target'] as String?) ?? '/report';
     return Scaffold(
       appBar: AppBar(title: const Text('Select Model')),
       body: _loading
@@ -60,9 +62,9 @@ class _ModelSelectionScreenState extends State<ModelSelectionScreen> {
                       ),
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () {
-                        Navigator.pushNamed(
+                        Navigator.pushReplacementNamed(
                           context,
-                          '/report',
+                          targetRoute,
                           arguments: {'machineModel': model},
                         );
                       },

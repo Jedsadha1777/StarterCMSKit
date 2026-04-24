@@ -117,15 +117,13 @@ class _FormDateState extends State<FormDate> {
     final decoration = widget.snapMode
         ? const InputDecoration(
             border: InputBorder.none,
-            isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            isCollapsed: true,
           )
         : InputDecoration(
             border: const OutlineInputBorder(),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            isCollapsed: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
             hintText: widget.placeholder ?? 'เลือกวันที่',
-            suffixIcon: const Icon(Icons.calendar_today, size: 18),
             filled: widget.required,
             fillColor: widget.required ? Colors.yellow.shade50 : null,
           );
