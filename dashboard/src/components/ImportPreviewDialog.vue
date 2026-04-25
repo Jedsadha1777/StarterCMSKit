@@ -33,6 +33,8 @@
               <th class="text-caption font-weight-bold">Customer ID</th>
               <th class="text-caption font-weight-bold">Name</th>
               <th class="text-caption font-weight-bold">Address</th>
+              <th class="text-caption font-weight-bold">Tel</th>
+              <th class="text-caption font-weight-bold">Fax</th>
               <th class="text-caption font-weight-bold" style="min-width:180px">Note</th>
             </tr>
           </thead>
@@ -61,6 +63,20 @@
                   <div class="text-caption text-grey text-decoration-line-through">{{ row.existing.address }}</div>
                 </template>
                 <template v-else>{{ row.address }}</template>
+              </td>
+              <td>
+                <template v-if="row.status === 'replace' && row.existing">
+                  {{ row.tel }}
+                  <div class="text-caption text-grey text-decoration-line-through">{{ row.existing.tel }}</div>
+                </template>
+                <template v-else>{{ row.tel }}</template>
+              </td>
+              <td>
+                <template v-if="row.status === 'replace' && row.existing">
+                  {{ row.fax }}
+                  <div class="text-caption text-grey text-decoration-line-through">{{ row.existing.fax }}</div>
+                </template>
+                <template v-else>{{ row.fax }}</template>
               </td>
               <td>
                 <span v-if="row.errors.length" class="text-error text-caption">{{ row.errors.join(', ') }}</span>

@@ -14,10 +14,10 @@ from config import IMPORT_DIR
 import os
 
 RESOURCE_TYPE = 'customers'
-EXPORT_COLUMNS = ['customer_id', 'name', 'address', 'created_by_name', 'created_at', 'updated_at']
-IMPORT_COLUMNS = ['customer_id', 'name', 'address']
+EXPORT_COLUMNS = ['customer_id', 'name', 'address', 'tel', 'fax', 'created_by_name', 'created_at', 'updated_at']
+IMPORT_COLUMNS = ['customer_id', 'name', 'address', 'tel', 'fax']
 REQUIRED_COLUMNS = ['customer_id', 'name']
-COMPARE_FIELDS = ['customer_id', 'name', 'address']
+COMPARE_FIELDS = ['customer_id', 'name', 'address', 'tel', 'fax']
 
 
 # ── CRUD ──
@@ -65,6 +65,8 @@ def create_customer(admin):
         customer_id=data['customer_id'],
         name=data['name'],
         address=data.get('address', ''),
+        tel=data.get('tel', ''),
+        fax=data.get('fax', ''),
         company_id=g.active_company.id,
         created_by=admin.id,
     )
@@ -110,6 +112,12 @@ def update_customer(admin, customer_public_id):
     if 'address' in data:
         customer.address = data['address']
 
+    if 'tel' in data:
+        customer.tel = data['tel']
+
+    if 'fax' in data:
+        customer.fax = data['fax']
+
     db.session.commit()
 
     return jsonify(CustomerResponseSchema().dump(customer)), 200
@@ -145,7 +153,7 @@ def export_customers(admin):
 
     def row_mapper(c):
         return [
-            c.customer_id, c.name, c.address or '',
+            c.customer_id, c.name, c.address or '', c.tel or '', c.fax or '',
             c.creator.name if c.creator else '',
             c.created_at.isoformat() if c.created_at else '',
             c.updated_at.isoformat() if c.updated_at else '',
@@ -188,11 +196,18 @@ def import_preview(admin):
             'customer_id': data.get('customer_id', ''),
             'name': data.get('name', ''),
             'address': data.get('address', ''),
+            'tel': data.get('tel', ''),
+            'fax': data.get('fax', ''),
             'status': status,
             'errors': errors,
         }
         if status == 'replace' and ex:
-            row_result['existing'] = {'name': ex.name, 'address': ex.address or ''}
+            row_result['existing'] = {
+                'name': ex.name,
+                'address': ex.address or '',
+                'tel': ex.tel or '',
+                'fax': ex.fax or '',
+            }
         preview_rows.append(row_result)
 
     return jsonify({'rows': preview_rows, 'summary': summary}), 200
@@ -231,10 +246,13 @@ def import_confirm(admin):
         if ex:
             ex.name = row['name']
             ex.address = row.get('address', '')
+            ex.tel = row.get('tel', '')
+            ex.fax = row.get('fax', '')
             updated += 1
         else:
             db.session.add(Customer(
-                customer_id=row['customer_id'], name=row['name'], address=row.get('address', ''),
+                customer_id=row['customer_id'], name=row['name'],
+                address=row.get('address', ''), tel=row.get('tel', ''), fax=row.get('fax', ''),
                 company_id=g.active_company.id, created_by=admin.id,
             ))
             created += 1

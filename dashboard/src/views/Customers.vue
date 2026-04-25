@@ -72,6 +72,8 @@ export default {
       { key: 'customer_id', label: 'Customer ID', sortable: true, width: '160px' },
       { key: 'name', label: 'Name', sortable: true, link: true },
       { key: 'address', label: 'Address' },
+      { key: 'tel', label: 'Tel', width: '140px' },
+      { key: 'fax', label: 'Fax', width: '140px' },
       { key: 'created_by_name', label: 'Created By', width: '140px' },
       { key: 'created_at', label: 'Created', sortable: true, width: '140px', nowrap: true },
     ]
@@ -130,6 +132,8 @@ export default {
           customer_id: r.customer_id,
           name: r.name,
           address: r.address,
+          tel: r.tel,
+          fax: r.fax,
         }))
         const { data } = await api.importCustomersConfirm(importFile.value, rows)
         showPreview.value = false

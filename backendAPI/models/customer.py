@@ -11,6 +11,8 @@ class Customer(db.Model):
     customer_id = db.Column(db.String(50), nullable=False)
     name = db.Column(db.String(200), nullable=False)
     address = db.Column(db.Text, nullable=True)
+    tel = db.Column(db.String(50), nullable=True)
+    fax = db.Column(db.String(50), nullable=True)
     company_id = db.Column(db.Integer, db.ForeignKey('companies.id', ondelete='CASCADE'), nullable=True, index=True)
     created_by = db.Column(db.Integer, db.ForeignKey('admins.id', ondelete='SET NULL'), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
@@ -24,6 +26,8 @@ class Customer(db.Model):
             'customer_id': self.customer_id,
             'name': self.name,
             'address': self.address,
+            'tel': self.tel,
+            'fax': self.fax,
             'created_by': self.creator.public_id if self.creator else None,
             'created_by_name': self.creator.name if self.creator else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
