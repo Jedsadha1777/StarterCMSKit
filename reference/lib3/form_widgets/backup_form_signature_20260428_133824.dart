@@ -8,8 +8,6 @@ class FormSignature extends StatefulWidget {
   final double? width;
   final double? height;
   final String? value;
-  final Uint8List? initialData;
-  final bool snapMode;
   final ValueChanged<Uint8List?>? onSigned;
 
   const FormSignature({
@@ -19,8 +17,6 @@ class FormSignature extends StatefulWidget {
     this.width,
     this.height,
     this.value,
-    this.initialData,
-    this.snapMode = false,
     this.onSigned,
   });
 
@@ -46,72 +42,49 @@ class _FormSignatureState extends State<FormSignature> {
   bool _hasSigned = false;
 
   @override
-  void initState() {
-    super.initState();
-    if (widget.initialData != null) {
-      _signatureBytes = widget.initialData;
-      _hasSigned = true;
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant FormSignature oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.initialData != oldWidget.initialData && widget.initialData != null) {
-      setState(() {
-        _signatureBytes = widget.initialData;
-        _hasSigned = true;
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final container = Container(
-      width: widget.width ?? double.infinity,
-      height: widget.height ?? double.infinity,
-      child: _hasSigned && _signatureBytes != null
-          ? (widget.snapMode
-              ? Center(child: Image.memory(_signatureBytes!, fit: BoxFit.contain))
-              : Stack(
-                  children: [
-                    Center(child: Image.memory(_signatureBytes!, fit: BoxFit.contain)),
-                    Positioned(
-                      top: 2, right: 2,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _signatureBytes = null;
-                            _hasSigned = false;
-                          });
-                          widget.onSigned?.call(null);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          color: Colors.black54,
-                          child: const Icon(Icons.close, size: 14, color: Colors.white),
-                        ),
-                      ),
-                    ),
-                  ],
-                ))
-          : (widget.snapMode
-              ? const SizedBox.shrink()
-              : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.draw_outlined, size: 24, color: Colors.grey.shade400),
-                    const SizedBox(height: 4),
-                    Text('Tap to sign', style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
-                  ],
-                )),
-    );
-
-    if (widget.snapMode) return container;
     return GestureDetector(
       onTap: () => _openSignaturePage(context),
-      behavior: HitTestBehavior.opaque,
-      child: container,
+      child: Container(
+        width: widget.width ?? double.infinity,
+        height: widget.height ?? double.infinity,
+        decoration: BoxDecoration(
+          border: Border.all(color: _hasSigned ? Colors.green : Colors.grey.shade400),
+          borderRadius: BorderRadius.circular(4),
+          color: Colors.grey.shade50,
+        ),
+        child: _hasSigned && _signatureBytes != null
+            ? Stack(
+                children: [
+                  Center(child: Image.memory(_signatureBytes!, fit: BoxFit.contain)),
+                  Positioned(
+                    top: 2, right: 2,
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _signatureBytes = null;
+                          _hasSigned = false;
+                        });
+                        widget.onSigned?.call(null);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        color: Colors.black54,
+                        child: const Icon(Icons.close, size: 14, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.draw_outlined, size: 24, color: Colors.grey.shade400),
+                  const SizedBox(height: 4),
+                  Text('Tap to sign', style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
+                ],
+              ),
+      ),
     );
   }
 
