@@ -206,6 +206,23 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
     super.dispose();
   }
 
+  void onReset() {
+    setState(() {
+      for (final ctrl in _controllerMap.values) {
+        ctrl.clear();
+      }
+      _formDate = null;
+      _installDate = null;
+      _inspectionDate = null;
+      _dateCustomerSign = null;
+      _dateEngineerSign = null;
+      _machineModelSearch = null;
+      _customerSignBytes = null;
+      _engineerSignBytes = null;
+      _draftId = const Uuid().v4();
+    });
+  }
+
   Future<void> onSave() async {
     if (_isSaving) return;
     setState(() => _isSaving = true);

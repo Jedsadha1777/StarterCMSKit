@@ -256,6 +256,20 @@ class ReportScreen2State extends State<ReportScreen2> {
     super.dispose();
   }
 
+  void onReset() {
+    setState(() {
+      for (final c in _controllerMap.values) { c.clear(); }
+      _visitDate = null;
+      _finishDate = null;
+      _customerName = null;
+      _signatureCustomerBytes = null;
+      _signatureServiceStaffBytes = null;
+      _typeOfService = false;
+      _imageUploadFiles.clear();
+      _draftId = const Uuid().v4();
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -585,42 +599,9 @@ class ReportScreen2State extends State<ReportScreen2> {
       _page2(),
     ],
     onBack: () => Navigator.of(context).pop(),
-    bottomBar: Container(
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(color: Color(0x1A000000), blurRadius: 8, offset: Offset(0, -2))],
-      ),
-      child: SafeArea(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            ElevatedButton.icon(
-              onPressed: _isSaving ? null : onSave,
-              icon: const Icon(Icons.save, size: 18),
-              label: const Text('Save'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-              ),
-            ),
-            ElevatedButton.icon(
-              onPressed: _isSending ? null : onSend,
-              icon: const Icon(Icons.send, size: 18),
-              label: const Text('Send'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFAD193C),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
+    onSaveDraft: _isSaving ? null : onSave,
+    onConfirmSend: _isSending ? null : onSend,
+    onReset: onReset,
   );
 
   Widget _page1() => RepaintBoundary(key: _captureKey, child: UnconstrainedBox(
