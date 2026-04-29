@@ -11,6 +11,7 @@ class FormSearch extends StatefulWidget {
   final String? value;
   final bool required;
   final bool snapMode;
+  final bool showValidation;
   final ValueChanged<Map<String, dynamic>?>? onSelected;
 
   const FormSearch({
@@ -24,6 +25,7 @@ class FormSearch extends StatefulWidget {
     this.value,
     this.required = false,
     this.snapMode = false,
+    this.showValidation = false,
     this.onSelected,
   });
 
@@ -136,29 +138,41 @@ class _FormSearchState extends State<FormSearch> {
 
   @override
   Widget build(BuildContext context) {
-    final decoration = widget.snapMode
-        ? const InputDecoration(
+    if (widget.snapMode) {
+      return CompositedTransformTarget(
+        link: _layerLink,
+        child: TextField(
+          controller: _ctrl,
+          readOnly: true,
+          decoration: const InputDecoration(
             border: InputBorder.none,
             isDense: true,
             contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          )
-        : InputDecoration(
-            border: const OutlineInputBorder(),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            hintText: widget.placeholder ?? 'Search...',
-            suffixIcon: const Icon(Icons.search, size: 18),
-            filled: widget.required,
-            fillColor: widget.required ? Colors.yellow.shade50 : null,
-          );
+          ),
+        ),
+      );
+    }
 
     return CompositedTransformTarget(
       link: _layerLink,
-      child: TextField(
-        controller: _ctrl,
-        readOnly: widget.snapMode,
-        onChanged: widget.snapMode ? null : _search,
-        decoration: decoration,
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _ctrl,
+        builder: (_, val, __) {
+          final highlight = widget.required && val.text.trim().isEmpty && widget.showValidation;
+          return TextField(
+            controller: _ctrl,
+            onChanged: _search,
+            decoration: InputDecoration(
+              border: const OutlineInputBorder(),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              hintText: widget.placeholder ?? 'Search...',
+              suffixIcon: const Icon(Icons.search, size: 18),
+              filled: highlight,
+              fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
+            ),
+          );
+        },
       ),
     );
   }

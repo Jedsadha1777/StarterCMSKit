@@ -10,6 +10,7 @@ class FormDate extends StatefulWidget {
   final bool required;
   final bool readonly;
   final bool snapMode;
+  final bool showValidation;
   final ValueChanged<String?>? onChanged;
 
   const FormDate({
@@ -22,6 +23,7 @@ class FormDate extends StatefulWidget {
     this.required = false,
     this.readonly = false,
     this.snapMode = false,
+    this.showValidation = false,
     this.onChanged,
   });
 
@@ -114,18 +116,20 @@ class _FormDateState extends State<FormDate> {
 
   @override
   Widget build(BuildContext context) {
+    final highlight = widget.required && (_selected == null || _selected!.isEmpty) && !widget.snapMode && widget.showValidation;
     final decoration = widget.snapMode
         ? const InputDecoration(
             border: InputBorder.none,
-            isCollapsed: true,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           )
         : InputDecoration(
             border: const OutlineInputBorder(),
-            isCollapsed: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             hintText: widget.placeholder ?? 'เลือกวันที่',
-            filled: widget.required,
-            fillColor: widget.required ? Colors.yellow.shade50 : null,
+            filled: highlight,
+            fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
           );
 
     return TextField(

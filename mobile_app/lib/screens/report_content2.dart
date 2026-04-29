@@ -35,7 +35,60 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
   bool _isSaving = false;
   bool _isSending = false;
   bool _snapMode = false;
+  bool _showValidation = false;
   final GlobalKey _captureKey = GlobalKey();
+
+  void setSnapMode(bool value) {
+    if (_snapMode == value) return;
+    setState(() => _snapMode = value);
+  }
+
+  // ============ VALIDATION HELPERS ============
+  List<String> _missingRequired() {
+    final missing = <String>[];
+    if (_customerNameController.text.trim().isEmpty) missing.add('Customer Name');
+    if (_machineModelSearch == null || _machineModelSearch!.isEmpty) missing.add('Machine Model');
+    if (_serialNoController.text.trim().isEmpty) missing.add('Serial No');
+    if (_installDate == null || _installDate!.isEmpty) missing.add('Install Date');
+    if (_inspectionDate == null || _inspectionDate!.isEmpty) missing.add('Inspection Date');
+    if (_inspectorByController.text.trim().isEmpty) missing.add('Inspector');
+    if (_dateCustomerSign == null || _dateCustomerSign!.isEmpty) missing.add('Customer Sign Date');
+    if (_dateEngineerSign == null || _dateEngineerSign!.isEmpty) missing.add('Engineer Sign Date');
+    return missing;
+  }
+
+  List<String> _missingSignatures() {
+    final m = <String>[];
+    if (_customerSignBytes == null) m.add('Customer signature');
+    if (_engineerSignBytes == null) m.add('Engineer signature');
+    return m;
+  }
+
+  Future<void> _showIncompleteDialog(List<String> missing, List<String> missingSigns) async {
+    final parts = <String>[];
+    if (missing.isNotEmpty) parts.add('Please fill in:\n${missing.join('\n')}');
+    if (missingSigns.isNotEmpty) parts.add('Missing signature:\n${missingSigns.join('\n')}');
+    if (parts.isEmpty || !mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Incomplete'),
+        content: Text(parts.join('\n\n')),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+      ),
+    );
+  }
+
+  /// Public hook: PreviewShell calls this before flipping to review mode.
+  /// Returns true if all required fields + signatures are filled.
+  Future<bool> validateForPreview() async {
+    final missing = _missingRequired();
+    final missingSigns = _missingSignatures();
+    if (missing.isEmpty && missingSigns.isEmpty) return true;
+    if (mounted) setState(() => _showValidation = true);
+    await _showIncompleteDialog(missing, missingSigns);
+    return false;
+  }
 
   // ============ NON-CONTROLLER STATE (FormDate, FormSearch, FormSignature) ============
   String? _formDate;
@@ -120,6 +173,35 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
   InputDecoration get _inputDecoration => _snapMode
       ? const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4))
       : const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8));
+
+  // Required raw TextField — yellow background while empty, transparent once filled.
+  Widget _requiredTextField(TextEditingController ctrl) {
+    if (_snapMode) {
+      return TextField(
+        controller: ctrl,
+        readOnly: true,
+        style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16),
+        decoration: _inputDecoration,
+      );
+    }
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: ctrl,
+      builder: (_, val, __) {
+        final highlight = val.text.trim().isEmpty && _showValidation;
+        return TextField(
+          controller: ctrl,
+          style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16),
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            filled: highlight,
+            fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
+          ),
+        );
+      },
+    );
+  }
 
   // ============ INSPECTION ITEMS HELPER ============
   List<Map<String, dynamic>> get _inspectionItems =>
@@ -270,36 +352,12 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
       return;
     }
 
-    // Validate mandatory fields
-    final missing = <String>[];
-    if (_customerNameController.text.trim().isEmpty) missing.add('Customer Name');
-    if (_serialNoController.text.trim().isEmpty) missing.add('Serial No');
-    if (_inspectionDate == null || _inspectionDate!.isEmpty) missing.add('Inspection Date');
-    if (_inspectorByController.text.trim().isEmpty) missing.add('Inspector');
-
-    if (missing.isNotEmpty) {
-      if (mounted) {
-        showDialog(context: context, builder: (ctx) => AlertDialog(
-          title: const Text('Incomplete'),
-          content: Text('Please fill in:\n${missing.join('\n')}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-        ));
-      }
-      return;
-    }
-
-    // Validate signatures
-    if (_customerSignBytes == null || _engineerSignBytes == null) {
-      if (mounted) {
-        final missingSigns = <String>[];
-        if (_customerSignBytes == null) missingSigns.add('Customer signature');
-        if (_engineerSignBytes == null) missingSigns.add('Engineer signature');
-        showDialog(context: context, builder: (ctx) => AlertDialog(
-          title: const Text('Signature Required'),
-          content: Text('Missing:\n${missingSigns.join('\n')}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-        ));
-      }
+    // Validate all required fields + signatures
+    final missing = _missingRequired();
+    final missingSigns = _missingSignatures();
+    if (missing.isNotEmpty || missingSigns.isNotEmpty) {
+      if (mounted) setState(() => _showValidation = true);
+      await _showIncompleteDialog(missing, missingSigns);
       return;
     }
 
@@ -733,7 +791,7 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
               ))),
           Positioned(left: cs[9], top: rs[7], width: cs[44] - cs[9], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name', fields: 'customer_name', required: true, snapMode: _snapMode, value: _customerNameController.text, onSelected: (v) { if (v != null) { _customerNameController.text = v['name'] as String? ?? ''; setState(() {}); } }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name', fields: 'customer_name', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _customerNameController.text, onSelected: (v) { if (v != null) { _customerNameController.text = v['name'] as String? ?? ''; setState(() {}); } }))),
           Positioned(left: cs[0], top: rs[8], width: cs[9] - cs[0], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), left: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -742,7 +800,7 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.top(color: Color(0xFF000000), width: 1, dotted: true), _DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[9], top: rs[8], width: cs[22] - cs[9], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'machine_model', source: 'machines', displayFields: 'code,name', fields: 'machine_model', required: true, snapMode: _snapMode, value: _machineModelSearch, onSelected: (v) => _machineModelSearch = v?['machine_model'] as String?)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'machine_model', source: 'machines', displayFields: 'code,name', fields: 'machine_model', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _machineModelSearch, onSelected: (v) => _machineModelSearch = v?['machine_model'] as String?)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[22], top: rs[8], width: cs[29] - cs[22], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -751,7 +809,7 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[29], top: rs[8], width: cs[44] - cs[29], height: rs[9] - rs[8], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _serialNoController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_serialNoController)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[0], top: rs[9], width: cs[9] - cs[0], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), left: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -760,7 +818,7 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
               )), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[9], top: rs[9], width: cs[22] - cs[9], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'install-date', required: true, snapMode: _snapMode, value: _installDate, onChanged: (v) => setState(() => _installDate = v))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'install-date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _installDate, onChanged: (v) => setState(() => _installDate = v))), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 1, dotted: true)]))))])),
           Positioned(left: cs[22], top: rs[9], width: cs[29] - cs[22], height: rs[10] - rs[9], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -778,7 +836,7 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
               ))),
           Positioned(left: cs[9], top: rs[10], width: cs[22] - cs[9], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'inspection-date', required: true, snapMode: _snapMode, value: _inspectionDate, onChanged: (v) => setState(() => _inspectionDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'inspection-date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _inspectionDate, onChanged: (v) => setState(() => _inspectionDate = v)))),
           Positioned(left: cs[22], top: rs[10], width: cs[29] - cs[22], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: DefaultTextStyle.merge(
@@ -787,7 +845,7 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
               ))),
           Positioned(left: cs[29], top: rs[10], width: cs[44] - cs[29], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _inspectorByController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_inspectorByController))),
           Positioned(left: cs[0], top: rs[11], width: cs[1] - cs[0], height: rs[12] - rs[11], child: Container(
               decoration: BoxDecoration(color: Color(0xFFFFFFFF), border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
@@ -1319,7 +1377,7 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
               )),
           Positioned(left: cs[5], top: rs[37], width: cs[18] - cs[5], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-customer-sign', required: true, snapMode: _snapMode, value: _dateCustomerSign, onChanged: (v) => setState(() => _dateCustomerSign = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-customer-sign', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _dateCustomerSign, onChanged: (v) => setState(() => _dateCustomerSign = v)))),
           cell(18, 37, 19, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(19, 37, 20, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(20, 37, 21, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
@@ -1334,7 +1392,7 @@ class ReportContentWidgetState2 extends State<ReportContentWidget2> {
               )),
           Positioned(left: cs[28], top: rs[37], width: cs[41] - cs[28], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-engineer-sign', required: true, snapMode: _snapMode, value: _dateEngineerSign, onChanged: (v) => setState(() => _dateEngineerSign = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'date-engineer-sign', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _dateEngineerSign, onChanged: (v) => setState(() => _dateEngineerSign = v)))),
           cell(41, 37, 42, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(42, 37, 43, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: const SizedBox.shrink()),
           cell(43, 37, 44, 38, bg: Color(0xFFFFFFFF), pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), align: Alignment.topLeft, child: const SizedBox.shrink()),

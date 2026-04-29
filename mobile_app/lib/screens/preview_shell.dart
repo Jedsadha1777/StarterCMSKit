@@ -44,6 +44,14 @@ class PreviewShell extends StatefulWidget {
   /// Reset action shown in Edit mode footer. If null, Reset button is hidden.
   final VoidCallback? onReset;
 
+  /// Fires when Edit ↔ Review mode flips. true = review (preview), false = edit.
+  /// Lets pages react (e.g. hide input borders in preview).
+  final ValueChanged<bool>? onModeChanged;
+
+  /// Guard called before flipping into review mode (Preview pressed).
+  /// Return false to block the flip (e.g. required fields missing).
+  final Future<bool> Function()? onBeforePreview;
+
   /// AppBar title.
   final String title;
 
@@ -58,6 +66,8 @@ class PreviewShell extends StatefulWidget {
     this.onSaveDraft,
     this.onConfirmSend,
     this.onReset,
+    this.onModeChanged,
+    this.onBeforePreview,
     this.title = 'Report',
   });
 
@@ -247,14 +257,19 @@ class _PreviewShellState extends State<PreviewShell> {
     }
   }
 
-  void _toggleMode(bool review) {
+  Future<void> _toggleMode(bool review) async {
     if (_reviewMode == review) return;
+    if (review && widget.onBeforePreview != null) {
+      final allow = await widget.onBeforePreview!();
+      if (!allow || !mounted) return;
+    }
     final vp = _bodySize();
     _initMode(review, vp);
     setState(() {
       _reviewMode = review;
       _scaleNotifier.value = review ? _reviewFitScale(vp) : _editFitScale(vp);
     });
+    widget.onModeChanged?.call(review);
   }
 
   Widget _modeTransition(Widget child, Animation<double> animation) {

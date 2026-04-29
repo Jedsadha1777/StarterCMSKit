@@ -9,6 +9,8 @@ class FormTime extends StatefulWidget {
   final int? step;
   final bool required;
   final bool readonly;
+  final bool snapMode;
+  final bool showValidation;
   final ValueChanged<String?>? onChanged;
 
   const FormTime({
@@ -21,6 +23,8 @@ class FormTime extends StatefulWidget {
     this.step,
     this.required = false,
     this.readonly = false,
+    this.snapMode = false,
+    this.showValidation = false,
     this.onChanged,
   });
 
@@ -96,19 +100,28 @@ class _FormTimeState extends State<FormTime> {
 
   @override
   Widget build(BuildContext context) {
+    final highlight = widget.required && (_selected == null || _selected!.isEmpty) && !widget.snapMode && widget.showValidation;
+    final decoration = widget.snapMode
+        ? const InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          )
+        : InputDecoration(
+            border: const OutlineInputBorder(),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            hintText: widget.placeholder ?? 'เลือกเวลา',
+            suffixIcon: const Icon(Icons.access_time, size: 18),
+            filled: highlight,
+            fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
+          );
+
     return TextField(
       controller: TextEditingController(text: _selected ?? ''),
       readOnly: true,
-      onTap: widget.readonly ? null : _pickTime,
-      decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        hintText: widget.placeholder ?? 'เลือกเวลา',
-        suffixIcon: const Icon(Icons.access_time, size: 18),
-        filled: widget.required,
-        fillColor: widget.required ? Colors.yellow.shade50 : null,
-      ),
+      onTap: (widget.readonly || widget.snapMode) ? null : _pickTime,
+      decoration: decoration,
     );
   }
 }

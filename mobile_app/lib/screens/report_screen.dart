@@ -31,6 +31,8 @@ class _ReportScreenState extends State<ReportScreen> {
       onSaveDraft: () => _contentKey.currentState?.onSave(),
       onConfirmSend: () => _contentKey.currentState?.onSend(),
       onReset: () => _contentKey.currentState?.onReset(),
+      onModeChanged: (review) => _contentKey.currentState?.setSnapMode(review),
+      onBeforePreview: () async => await _contentKey.currentState?.validateForPreview() ?? true,
     );
   }
 }

@@ -7,6 +7,9 @@ class FormCheckbox extends StatefulWidget {
   final bool hasOther;
   final dynamic value;
   final bool disabled;
+  final bool required;
+  final bool snapMode;
+  final bool showValidation;
   final ValueChanged<dynamic>? onChanged;
 
   const FormCheckbox({
@@ -17,6 +20,9 @@ class FormCheckbox extends StatefulWidget {
     this.hasOther = false,
     this.value,
     this.disabled = false,
+    this.required = false,
+    this.snapMode = false,
+    this.showValidation = false,
     this.onChanged,
   });
 
@@ -38,6 +44,7 @@ class FormCheckbox extends StatefulWidget {
       hasOther: json['other'] == true,
       value: json['value'],
       disabled: json['disabled'] == true,
+      required: json['required'] == true,
       onChanged: onChanged,
     );
   }
@@ -80,6 +87,15 @@ class _FormCheckboxState extends State<FormCheckbox> {
     });
   }
 
+  bool get _isEmpty => widget.isGroup ? _selected.isEmpty : !_singleValue;
+
+  bool get _highlight =>
+      widget.required && _isEmpty && !widget.snapMode && widget.showValidation;
+
+  Widget _wrap(Widget checkbox) => _highlight
+      ? ColoredBox(color: const Color.fromARGB(136, 255, 235, 59), child: checkbox)
+      : checkbox;
+
   @override
   Widget build(BuildContext context) {
     if (widget.isGroup) return _buildGroup();
@@ -87,7 +103,7 @@ class _FormCheckboxState extends State<FormCheckbox> {
   }
 
   Widget _buildSingle() {
-    final checkbox = Checkbox(
+    final checkbox = _wrap(Checkbox(
       value: _singleValue,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
@@ -97,7 +113,7 @@ class _FormCheckboxState extends State<FormCheckbox> {
               setState(() => _singleValue = v ?? false);
               widget.onChanged?.call(_singleValue);
             },
-    );
+    ));
 
     if (widget.label != null) {
       return Row(
@@ -115,7 +131,7 @@ class _FormCheckboxState extends State<FormCheckbox> {
       children.add(Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Checkbox(
+          _wrap(Checkbox(
             value: _selected.contains(opt),
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
@@ -131,7 +147,7 @@ class _FormCheckboxState extends State<FormCheckbox> {
                     });
                     _emitGroup();
                   },
-          ),
+          )),
           Flexible(child: Text(opt)),
         ],
       ));
@@ -141,7 +157,7 @@ class _FormCheckboxState extends State<FormCheckbox> {
       children.add(Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Checkbox(
+          _wrap(Checkbox(
             value: _selected.contains('Other'),
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
@@ -157,7 +173,7 @@ class _FormCheckboxState extends State<FormCheckbox> {
                     });
                     _emitGroup();
                   },
-          ),
+          )),
           const Text('Other: '),
           SizedBox(
             width: 120,

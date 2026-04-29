@@ -10,6 +10,8 @@ class FormTextarea extends StatelessWidget {
   final bool required;
   final bool readonly;
   final bool disabled;
+  final bool snapMode;
+  final bool showValidation;
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
 
@@ -24,6 +26,8 @@ class FormTextarea extends StatelessWidget {
     this.required = false,
     this.readonly = false,
     this.disabled = false,
+    this.snapMode = false,
+    this.showValidation = false,
     this.controller,
     this.onChanged,
   });
@@ -51,45 +55,54 @@ class FormTextarea extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctrl = controller ?? TextEditingController(text: value);
 
-    final decoration = InputDecoration(
-      border: const OutlineInputBorder(),
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      hintText: placeholder,
-      filled: required,
-      fillColor: required ? Colors.yellow.shade50 : null,
-    );
-
-    // 4 render strategies:
-    //  (1) bounded cell + no max          → expands:true, fills cell
-    //  (2) bounded cell + max-height      → SizedBox(height: maxHeight) + expands:true
-    //  (3) unbounded parent + max-height  → SizedBox(height: maxHeight) + expands:true
-    //  (4) unbounded parent + no max      → maxLines: rows (safe fallback, no crash)
     return LayoutBuilder(
       builder: (ctx, constraints) {
         final bounded = constraints.hasBoundedHeight;
         final hasMaxH = maxHeight != null;
 
-        Widget tf;
-        if (hasMaxH || bounded) {
-          tf = TextField(
-            controller: ctrl,
-            maxLines: null, minLines: null, expands: true,
-            textAlignVertical: TextAlignVertical.top,
-            readOnly: readonly || disabled,
-            enabled: !disabled,
-            onChanged: onChanged,
-            decoration: decoration,
-          );
-        } else {
-          // unbounded fallback — rows-capped, safe in any parent
-          tf = TextField(
+        Widget buildTf(InputDecoration decoration) {
+          if (hasMaxH || bounded) {
+            return TextField(
+              controller: ctrl,
+              maxLines: null, minLines: null, expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              readOnly: readonly || disabled || snapMode,
+              enabled: !disabled,
+              onChanged: snapMode ? null : onChanged,
+              decoration: decoration,
+            );
+          }
+          return TextField(
             controller: ctrl,
             maxLines: rows,
-            readOnly: readonly || disabled,
+            readOnly: readonly || disabled || snapMode,
             enabled: !disabled,
-            onChanged: onChanged,
+            onChanged: snapMode ? null : onChanged,
             decoration: decoration,
+          );
+        }
+
+        Widget tf;
+        if (snapMode) {
+          tf = buildTf(const InputDecoration(
+            border: InputBorder.none,
+            isDense: true,
+            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          ));
+        } else {
+          tf = ValueListenableBuilder<TextEditingValue>(
+            valueListenable: ctrl,
+            builder: (_, val, __) {
+              final highlight = required && val.text.trim().isEmpty && showValidation;
+              return buildTf(InputDecoration(
+                border: const OutlineInputBorder(),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                hintText: placeholder,
+                filled: highlight,
+                fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
+              ));
+            },
           );
         }
 
@@ -99,7 +112,6 @@ class FormTextarea extends StatelessWidget {
             height: hasMaxH ? maxHeight : null,
             child: tf,
           );
-          // Prevent the cell's fill constraints from stretching the SizedBox
           tf = Align(alignment: Alignment.topLeft, child: tf);
         }
 

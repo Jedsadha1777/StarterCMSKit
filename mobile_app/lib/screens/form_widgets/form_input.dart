@@ -10,6 +10,8 @@ class FormInput extends StatelessWidget {
   final bool required;
   final bool readonly;
   final bool disabled;
+  final bool snapMode;
+  final bool showValidation;
   final TextEditingController? controller;
   final ValueChanged<String>? onChanged;
 
@@ -23,6 +25,8 @@ class FormInput extends StatelessWidget {
     this.required = false,
     this.readonly = false,
     this.disabled = false,
+    this.snapMode = false,
+    this.showValidation = false,
     this.controller,
     this.onChanged,
   });
@@ -56,21 +60,42 @@ class FormInput extends StatelessWidget {
   Widget build(BuildContext context) {
     final ctrl = controller ?? TextEditingController(text: value);
 
-    return TextField(
-      controller: ctrl,
-      keyboardType: _keyboardMap[type] ?? TextInputType.text,
-      readOnly: readonly || disabled,
-      enabled: !disabled,
-      onChanged: onChanged,
-      inputFormatters: _buildFormatters(),
-      decoration: InputDecoration(
-        border: const OutlineInputBorder(),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        hintText: placeholder,
-        filled: required,
-        fillColor: required ? Colors.yellow.shade50 : null,
-      ),
+    if (snapMode) {
+      return TextField(
+        controller: ctrl,
+        keyboardType: _keyboardMap[type] ?? TextInputType.text,
+        readOnly: true,
+        enabled: !disabled,
+        inputFormatters: _buildFormatters(),
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        ),
+      );
+    }
+
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: ctrl,
+      builder: (context, val, _) {
+        final highlight = required && val.text.trim().isEmpty && showValidation;
+        return TextField(
+          controller: ctrl,
+          keyboardType: _keyboardMap[type] ?? TextInputType.text,
+          readOnly: readonly || disabled,
+          enabled: !disabled,
+          onChanged: onChanged,
+          inputFormatters: _buildFormatters(),
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+            hintText: placeholder,
+            filled: highlight,
+            fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
+          ),
+        );
+      },
     );
   }
 

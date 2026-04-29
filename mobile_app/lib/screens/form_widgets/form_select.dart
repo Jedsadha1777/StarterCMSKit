@@ -7,6 +7,8 @@ class FormSelect extends StatefulWidget {
   final bool firstAsLabel;
   final bool required;
   final bool disabled;
+  final bool snapMode;
+  final bool showValidation;
   final ValueChanged<String?>? onChanged;
 
   const FormSelect({
@@ -17,6 +19,8 @@ class FormSelect extends StatefulWidget {
     this.firstAsLabel = false,
     this.required = false,
     this.disabled = false,
+    this.snapMode = false,
+    this.showValidation = false,
     this.onChanged,
   });
 
@@ -60,6 +64,16 @@ class _FormSelectState extends State<FormSelect> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.snapMode) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(_selected ?? ''),
+        ),
+      );
+    }
+
     final startIndex = widget.firstAsLabel ? 1 : 0;
     final hint = widget.firstAsLabel && widget.options.isNotEmpty
         ? widget.options.first
@@ -68,6 +82,8 @@ class _FormSelectState extends State<FormSelect> {
     final items = widget.options.sublist(startIndex).map((opt) {
       return DropdownMenuItem<String>(value: opt, child: Text(opt));
     }).toList();
+
+    final highlight = widget.required && (_selected == null || _selected!.isEmpty) && widget.showValidation;
 
     return DropdownButtonFormField<String>(
       value: _selected,
@@ -83,8 +99,8 @@ class _FormSelectState extends State<FormSelect> {
         border: const OutlineInputBorder(),
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        filled: widget.required,
-        fillColor: widget.required ? Colors.yellow.shade50 : null,
+        filled: highlight,
+        fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
       ),
     );
   }

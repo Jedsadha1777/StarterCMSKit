@@ -414,33 +414,11 @@ class ReportScreen2State extends State<ReportScreen2> {
       return;
     }
 
-    final missing = <String>[];
-    if (_customerNameController.text.trim().isEmpty) missing.add('Customer Name');
-    if (_serialNoController.text.trim().isEmpty) missing.add('Serial No');
-    if (_visitDate == null || _visitDate!.isEmpty) missing.add('Visit Date');
-    if (_serviceStaffNameController.text.trim().isEmpty) missing.add('Service Staff Name');
-    if (missing.isNotEmpty) {
-      if (mounted) {
-        showDialog(context: context, builder: (ctx) => AlertDialog(
-          title: const Text('Incomplete'),
-          content: Text('Please fill in:\n${missing.join('\n')}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-        ));
-      }
-      return;
-    }
-
-    if (_signatureCustomerBytes == null || _signatureServiceStaffBytes == null) {
-      if (mounted) {
-        final missingSigns = <String>[];
-        if (_signatureCustomerBytes == null) missingSigns.add('Customer signature');
-        if (_signatureServiceStaffBytes == null) missingSigns.add('Service staff signature');
-        showDialog(context: context, builder: (ctx) => AlertDialog(
-          title: const Text('Signature Required'),
-          content: Text('Missing:\n${missingSigns.join('\n')}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-        ));
-      }
+    final missing = _missingRequired();
+    final missingSigns = _missingSignatures();
+    if (missing.isNotEmpty || missingSigns.isNotEmpty) {
+      if (mounted) setState(() => _showValidation = true);
+      await _showIncompleteDialog(missing, missingSigns);
       return;
     }
 
@@ -584,6 +562,7 @@ class ReportScreen2State extends State<ReportScreen2> {
   Uint8List? _signatureCustomerBytes;
   Uint8List? _signatureServiceStaffBytes;
   bool _typeOfService = false;
+  bool _showValidation = false;
 
   // Map<fieldName, absolute-path> (file lives under app-docs/uploads/)
   final Map<String, String> _imageUploadFiles = {};
@@ -591,6 +570,74 @@ class ReportScreen2State extends State<ReportScreen2> {
   InputDecoration get _inputDecoration => _snapMode
       ? const InputDecoration(border: InputBorder.none, isCollapsed: true)
       : const InputDecoration(border: OutlineInputBorder(), isCollapsed: true);
+
+  // Required raw TextField — yellow background while empty, transparent once filled.
+  Widget _requiredTextField(TextEditingController ctrl) {
+    if (_snapMode) {
+      return TextField(
+        controller: ctrl,
+        readOnly: true,
+        decoration: _inputDecoration,
+      );
+    }
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: ctrl,
+      builder: (_, val, __) {
+        final highlight = val.text.trim().isEmpty && _showValidation;
+        return TextField(
+          controller: ctrl,
+          decoration: InputDecoration(
+            border: const OutlineInputBorder(),
+            isCollapsed: true,
+            filled: highlight,
+            fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
+          ),
+        );
+      },
+    );
+  }
+
+  // ============ VALIDATION HELPERS ============
+  List<String> _missingRequired() {
+    final missing = <String>[];
+    if (_customerNameController.text.trim().isEmpty) missing.add('Customer Name');
+    if (_serialNoController.text.trim().isEmpty) missing.add('Serial No');
+    if (_visitDate == null || _visitDate!.isEmpty) missing.add('Visit Date');
+    if (_finishDate == null || _finishDate!.isEmpty) missing.add('Finish Date');
+    if (_serviceStaffNameController.text.trim().isEmpty) missing.add('Service Staff Name');
+    return missing;
+  }
+
+  List<String> _missingSignatures() {
+    final m = <String>[];
+    if (_signatureCustomerBytes == null) m.add('Customer signature');
+    if (_signatureServiceStaffBytes == null) m.add('Service staff signature');
+    return m;
+  }
+
+  Future<void> _showIncompleteDialog(List<String> missing, List<String> missingSigns) async {
+    final parts = <String>[];
+    if (missing.isNotEmpty) parts.add('Please fill in:\n${missing.join('\n')}');
+    if (missingSigns.isNotEmpty) parts.add('Missing signature:\n${missingSigns.join('\n')}');
+    if (parts.isEmpty || !mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Incomplete'),
+        content: Text(parts.join('\n\n')),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
+      ),
+    );
+  }
+
+  Future<bool> _validateForPreview() async {
+    final missing = _missingRequired();
+    final missingSigns = _missingSignatures();
+    if (missing.isEmpty && missingSigns.isEmpty) return true;
+    if (mounted) setState(() => _showValidation = true);
+    await _showIncompleteDialog(missing, missingSigns);
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) => PreviewShell(
@@ -602,6 +649,8 @@ class ReportScreen2State extends State<ReportScreen2> {
     onSaveDraft: _isSaving ? null : onSave,
     onConfirmSend: _isSending ? null : onSend,
     onReset: onReset,
+    onModeChanged: (review) => setState(() => _snapMode = review),
+    onBeforePreview: _validateForPreview,
   );
 
   Widget _page1() => RepaintBoundary(key: _captureKey, child: UnconstrainedBox(
@@ -1056,7 +1105,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[6], top: rs[6], width: cs[13] - cs[6], height: rs[7] - rs[6], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'visit-date', required: true, snapMode: _snapMode, value: _visitDate, onChanged: (v) => setState(() => _visitDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'visit-date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _visitDate, onChanged: (v) => setState(() => _visitDate = v)))),
           Positioned(left: cs[13], top: rs[6], width: cs[14] - cs[13], height: rs[7] - rs[6], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
@@ -1141,7 +1190,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[6], top: rs[7], width: cs[13] - cs[6], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'finish-date', required: true, snapMode: _snapMode, value: _finishDate, onChanged: (v) => setState(() => _finishDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'finish-date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _finishDate, onChanged: (v) => setState(() => _finishDate = v)))),
           Positioned(left: cs[13], top: rs[7], width: cs[14] - cs[13], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
@@ -1226,7 +1275,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[8], top: rs[8], width: cs[29] - cs[8], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer-name', source: 'customers', displayFields: 'name,contact', fields: 'customer-name,customer-contact', required: true, snapMode: _snapMode, value: _customerName, onSelected: (v) => setState(() => _customerName = v?['customer-name,customer-contact'] as String?)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer-name', source: 'customers', displayFields: 'name,contact', fields: 'customer-name,customer-contact', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _customerName, onSelected: (v) => setState(() => _customerName = v?['customer-name,customer-contact'] as String?)))),
           Positioned(left: cs[29], top: rs[8], width: cs[33] - cs[29], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -1257,7 +1306,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[25], top: rs[9], width: cs[45] - cs[25], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _serialNoController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_serialNoController))),
 
 
 
@@ -3104,7 +3153,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[6], top: rs[6], width: cs[13] - cs[6], height: rs[7] - rs[6], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'visit-date', required: true, snapMode: _snapMode, value: _visitDate, onChanged: (v) => setState(() => _visitDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'visit-date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _visitDate, onChanged: (v) => setState(() => _visitDate = v)))),
           Positioned(left: cs[13], top: rs[6], width: cs[14] - cs[13], height: rs[7] - rs[6], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
@@ -3189,7 +3238,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[6], top: rs[7], width: cs[13] - cs[6], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'finish-date', required: true, snapMode: _snapMode, value: _finishDate, onChanged: (v) => setState(() => _finishDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'finish-date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _finishDate, onChanged: (v) => setState(() => _finishDate = v)))),
           Positioned(left: cs[13], top: rs[7], width: cs[14] - cs[13], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
@@ -3274,7 +3323,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[8], top: rs[8], width: cs[29] - cs[8], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1), right: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer-name', source: 'customers', displayFields: 'name,contact', fields: 'customer-name,customer-contact', required: true, snapMode: _snapMode, value: _customerName, onSelected: (v) => setState(() => _customerName = v?['customer-name,customer-contact'] as String?)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer-name', source: 'customers', displayFields: 'name,contact', fields: 'customer-name,customer-contact', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _customerName, onSelected: (v) => setState(() => _customerName = v?['customer-name,customer-contact'] as String?)))),
           Positioned(left: cs[29], top: rs[8], width: cs[33] - cs[29], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -3305,7 +3354,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[25], top: rs[9], width: cs[45] - cs[25], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _serialNoController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_serialNoController))),
 
 
 
@@ -4102,7 +4151,7 @@ class ReportScreen2State extends State<ReportScreen2> {
 
           Positioned(left: cs[27], top: rs[34], width: cs[40] - cs[27], height: rs[35] - rs[34], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _serviceStaffNameController, style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16), decoration: _inputDecoration))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_serviceStaffNameController))),
 
 
 
