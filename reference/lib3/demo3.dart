@@ -1,35 +1,28 @@
-// Layout sourced from reference/lib3/demo3.dart (SERVICE REPORT — parts 1-15,
-// visit/finish dates, time-in/out, customer + model searches, type of service,
-// 6 image attachments, dual signatures). Wiring (draft save/load, API submit,
-// PDF screenshot capture, validation, route args, image-upload disk handling)
-// preserved from the previous report_screen2.dart.
+// ─────────────────────────────────────────────────────────────────────────
+// FORM SUFFIX: "1"
+//   Classes in this file: FormWidget1, FormWidgetState1
+//
+// หากต้องการ integrate หลายฟอร์มในโปรเจ็กต์เดียวกัน — rename ใน IDE:
+//   FormWidget1  →  FormWidget2 (หรือชื่ออื่น)
+//   FormWidgetState1  →  FormWidgetState2
+// VS Code: F2 บน class name | JetBrains: Shift+F6
+// ─────────────────────────────────────────────────────────────────────────
 
-import 'dart:io';
-import 'dart:math' as math;
-import 'dart:convert';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:uuid/uuid.dart';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'form_widgets/form_widgets.dart';
 import 'preview_shell.dart';
-import '../services/local_db.dart';
-import '../services/api/report_api.dart';
-import '../services/connectivity_service.dart';
-import 'email_dialog.dart';
 
-class ReportScreen2 extends StatefulWidget {
-  const ReportScreen2({super.key});
+void main() => runApp(const FormWidget1());
+
+class FormWidget1 extends StatefulWidget {
+  const FormWidget1({super.key});
   @override
-  State<ReportScreen2> createState() => ReportScreen2State();
+  State<FormWidget1> createState() => FormWidgetState1();
 }
 
-class ReportScreen2State extends State<ReportScreen2> {
+class FormWidgetState1 extends State<FormWidget1> {
 
   // ============ CONTROLLERS ============
   final _customerTelController = TextEditingController();
@@ -218,21 +211,7 @@ class ReportScreen2State extends State<ReportScreen2> {
   // ============ STATE VARIABLES ============
   bool _snapMode = false;
   final GlobalKey _captureKey = GlobalKey();
-  final GlobalKey _captureKey2 = GlobalKey();
 
-  // Draft / submit state
-  String? _draftId;
-  bool _isSaving = false;
-  bool _isSending = false;
-  bool _argsLoaded = false;
-  bool _showValidation = false;
-  Map<String, dynamic>? _machineModel;
-  Map<String, dynamic>? _draftData;
-
-  // Map<fieldName, absolute-path> (file lives under app-docs/uploads/)
-  final Map<String, String> _imageUploadFiles = {};
-
-  // Form-specific (driven by FormDate / FormTime / FormSearch / FormSignature)
   String? _visitDate;
   String? _finishDate;
   String? _timeIn;
@@ -262,388 +241,11 @@ class ReportScreen2State extends State<ReportScreen2> {
       ? const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 0))
       : const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0));
 
-  // ============ LIFECYCLE ============
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_argsLoaded) return;
-    _argsLoaded = true;
-    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-    _machineModel = args?['machineModel'] as Map<String, dynamic>?;
-    _draftData = args?['draftData'] as Map<String, dynamic>?;
-    if (_draftData != null) {
-      _draftId = _draftData!['draft_id'] as String?;
-      final formData = _draftData!['form_data'];
-      if (formData is Map<String, dynamic>) {
-        _restoreData(formData).then((_) { if (mounted) setState(() {}); });
-      }
-    } else {
-      _draftId = const Uuid().v4();
-    }
-  }
-
-  void onReset() {
-    setState(() {
-      for (final c in _controllerMap.values) { c.clear(); }
-      _visitDate = null;
-      _finishDate = null;
-      _timeIn = null;
-      _timeOut = null;
-      _customerName = null;
-      _modelName = null;
-      _partName1 = null; _partName2 = null; _partName3 = null;
-      _partName4 = null; _partName5 = null; _partName6 = null;
-      _partName7 = null; _partName8 = null; _partName9 = null;
-      _partName10 = null; _partName11 = null; _partName12 = null;
-      _partName13 = null; _partName14 = null; _partName15 = null;
-      _customerSignBytes = null;
-      _staffSignBytes = null;
-      _typeOfService = false;
-      _imageUploadFiles.clear();
-      _showValidation = false;
-      _draftId = const Uuid().v4();
-    });
-  }
-
-  // ============ IMAGE UPLOAD ============
-  Future<void> _onImagePicked(String name, XFile? xfile) async {
-    if (xfile == null) {
-      if (mounted) setState(() => _imageUploadFiles.remove(name));
-      return;
-    }
-    final dir = await getApplicationDocumentsDirectory();
-    final upDir = Directory('${dir.path}/uploads');
-    if (!await upDir.exists()) await upDir.create(recursive: true);
-    final srcPath = xfile.path;
-    final ext = srcPath.contains('.') ? srcPath.substring(srcPath.lastIndexOf('.')) : '.jpg';
-    final filename = '${_draftId}_$name$ext';
-    final absPath = '${upDir.path}/$filename';
-    await File(srcPath).copy(absPath);
-    if (mounted) setState(() => _imageUploadFiles[name] = absPath);
-  }
-
-  // ============ COLLECT / RESTORE DATA ============
-  Future<Map<String, dynamic>> _collectData() async {
-    final data = <String, dynamic>{};
-    for (final entry in _controllerMap.entries) {
-      data[entry.key] = entry.value.text;
-    }
-    data['visitDate'] = _visitDate;
-    data['finishDate'] = _finishDate;
-    data['timeIn'] = _timeIn;
-    data['timeOut'] = _timeOut;
-    data['customerNameSearch'] = _customerName;
-    data['modelNameSearch'] = _modelName;
-    data['typeOfService'] = _typeOfService;
-    for (int i = 1; i <= 15; i++) {
-      data['partName$i'] = _partNameFor(i);
-    }
-    data['signatureCustomer'] = _customerSignBytes != null ? base64Encode(_customerSignBytes!) : null;
-    data['signatureStaff'] = _staffSignBytes != null ? base64Encode(_staffSignBytes!) : null;
-    for (final e in _imageUploadFiles.entries) {
-      final p = e.value;
-      data[e.key] = p.substring(p.lastIndexOf('/') + 1);
-    }
-    return data;
-  }
-
-  String? _partNameFor(int i) => switch (i) {
-    1 => _partName1, 2 => _partName2, 3 => _partName3, 4 => _partName4, 5 => _partName5,
-    6 => _partName6, 7 => _partName7, 8 => _partName8, 9 => _partName9, 10 => _partName10,
-    11 => _partName11, 12 => _partName12, 13 => _partName13, 14 => _partName14, 15 => _partName15,
-    _ => null,
-  };
-
-  void _setPartName(int i, String? v) {
-    setState(() {
-      switch (i) {
-        case 1: _partName1 = v; case 2: _partName2 = v; case 3: _partName3 = v;
-        case 4: _partName4 = v; case 5: _partName5 = v; case 6: _partName6 = v;
-        case 7: _partName7 = v; case 8: _partName8 = v; case 9: _partName9 = v;
-        case 10: _partName10 = v; case 11: _partName11 = v; case 12: _partName12 = v;
-        case 13: _partName13 = v; case 14: _partName14 = v; case 15: _partName15 = v;
-      }
-    });
-  }
-
-  Future<void> _restoreData(Map<String, dynamic> formData) async {
-    for (final entry in formData.entries) {
-      final ctrl = _controllerMap[entry.key];
-      if (ctrl != null && entry.value is String) {
-        ctrl.text = entry.value;
-        continue;
-      }
-      switch (entry.key) {
-        case 'visitDate': _visitDate = entry.value as String?;
-        case 'finishDate': _finishDate = entry.value as String?;
-        case 'timeIn': _timeIn = entry.value as String?;
-        case 'timeOut': _timeOut = entry.value as String?;
-        case 'customerNameSearch': _customerName = entry.value as String?;
-        case 'modelNameSearch': _modelName = entry.value as String?;
-        case 'typeOfService': _typeOfService = entry.value as bool? ?? false;
-        case 'signatureCustomer':
-          if (entry.value is String) _customerSignBytes = base64Decode(entry.value);
-        case 'signatureStaff':
-          if (entry.value is String) _staffSignBytes = base64Decode(entry.value);
-        default:
-          // partName1..15
-          if (entry.key.startsWith('partName') && entry.value is String?) {
-            final idx = int.tryParse(entry.key.substring('partName'.length));
-            if (idx != null && idx >= 1 && idx <= 15) {
-              _setPartName(idx, entry.value as String?);
-            }
-          } else if (entry.key.startsWith('pic') && entry.value is String) {
-            final dir = await getApplicationDocumentsDirectory();
-            final absPath = '${dir.path}/uploads/${entry.value}';
-            if (await File(absPath).exists()) {
-              _imageUploadFiles[entry.key] = absPath;
-            }
-          }
-      }
-    }
-  }
-
-  // ============ SAVE / SEND ============
-  Future<void> onSave() async {
-    if (_isSaving) return;
-    setState(() => _isSaving = true);
-    try {
-      await LocalDb().saveDraft(
-        draftId: _draftId!,
-        machineModelId: _machineModel?['id'] ?? '',
-        formData: await _collectData(),
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Draft saved!'), duration: Duration(seconds: 1)),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  Future<Uint8List?> _captureScreenshot(GlobalKey key) async {
-    final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-    if (boundary == null) return null;
-    final image = await boundary.toImage(pixelRatio: 2.0);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
-  }
-
-  Future<Uint8List> _imagesToPdf(List<Uint8List> pngList) async {
-    final pdf = pw.Document();
-    for (final png in pngList) {
-      final image = pw.MemoryImage(png);
-      pdf.addPage(pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        margin: pw.EdgeInsets.zero,
-        build: (ctx) => pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain)),
-      ));
-    }
-    return pdf.save();
-  }
-
-  Future<void> onSend() async {
-    if (_isSending) return;
-
-    final collected = await _collectData();
-    await LocalDb().saveDraft(
-      draftId: _draftId!,
-      machineModelId: _machineModel?['id'] ?? '',
-      formData: collected,
-    );
-
-    if (!ConnectivityService().isOnline) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No internet connection. Please save as draft.')),
-      );
-      return;
-    }
-
-    final missing = _missingRequired();
-    final missingSigns = _missingSignatures();
-    if (missing.isNotEmpty || missingSigns.isNotEmpty) {
-      if (mounted) setState(() => _showValidation = true);
-      await _showIncompleteDialog(missing, missingSigns);
-      return;
-    }
-
-    final emails = await showEmailDialog(context);
-    if (emails == null || emails.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Send cancelled (no recipient email).')),
-        );
-      }
-      return;
-    }
-
-    setState(() => _isSending = true);
-    try {
-      String? reportNo;
-      String? reportId;
-
-      final existingDraft = await LocalDb().loadDraft(_draftId!);
-      final existingReportId = existingDraft?['report_public_id'] as String?;
-      if (existingReportId != null && existingReportId.isNotEmpty) {
-        reportId = existingReportId;
-        reportNo = existingDraft?['report_no'] as String?;
-      }
-
-      if (reportId == null) {
-        final jsonData = Map<String, dynamic>.from(collected);
-        for (final key in _imageUploadFiles.keys) {
-          jsonData.remove(key);
-        }
-        final result = await ReportApi().submitReport(
-          formData: jsonData,
-          recipientEmails: emails,
-          machineModelId: _machineModel?['id'] ?? '',
-          serialNo: _serialNoController.text,
-          inspectorName: _staffSignNameController.text,
-          inspectedAt: _visitDate,
-          imageAttachments: _imageUploadFiles.isEmpty ? null : _imageUploadFiles,
-        );
-        reportNo = result['report_no'] as String?;
-        reportId = result['id'] as String?;
-        if (_draftId != null && reportId != null) {
-          await LocalDb().updateDraftStatus(_draftId!, 'sent', reportNo: reportNo, reportPublicId: reportId);
-        }
-      }
-
-      setState(() => _snapMode = true);
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      final pages = <Uint8List>[];
-      for (final key in [_captureKey, _captureKey2]) {
-        Uint8List? png = await _captureScreenshot(key);
-        if (png == null) {
-          await Future.delayed(const Duration(milliseconds: 300));
-          png = await _captureScreenshot(key);
-        }
-        if (png != null) pages.add(png);
-      }
-
-      setState(() => _snapMode = false);
-
-      if (pages.isEmpty || reportId == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Screenshot failed. Press Send again to retry (report no. is saved).'),
-              duration: Duration(seconds: 5),
-            ),
-          );
-        }
-        return;
-      }
-
-      final pdfBytes = await _imagesToPdf(pages);
-      if (_draftId != null) {
-        await LocalDb().savePdfData(_draftId!, pdfBytes);
-      }
-
-      final uploadResult = await ReportApi().uploadPdf(reportId, pdfBytes);
-
-      if (_draftId != null) {
-        await LocalDb().clearPdfData(_draftId!);
-      }
-
-      final status = uploadResult['status'] as String?;
-      if (mounted) {
-        if (status == 'email_failed') {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Report saved but email failed. You can retry from Report History.'),
-              duration: Duration(seconds: 4),
-            ),
-          );
-        } else {
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('Success'),
-              content: Text('Report submitted.\nReport No: $reportNo'),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    Navigator.pop(context, true);
-                  },
-                  child: const Text('OK'),
-                ),
-              ],
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Send failed: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() { _isSending = false; _snapMode = false; });
-    }
-  }
-
-  // ============ VALIDATION ============
-  List<String> _missingRequired() {
-    final missing = <String>[];
-    if (_visitDate == null || _visitDate!.isEmpty) missing.add('Visit Date');
-    if (_finishDate == null || _finishDate!.isEmpty) missing.add('Finish Date');
-    if (_timeIn == null || _timeIn!.isEmpty) missing.add('Time In');
-    if (_timeOut == null || _timeOut!.isEmpty) missing.add('Time Out');
-    if (_customerName == null || _customerName!.isEmpty) missing.add('Customer Name');
-    if (_modelName == null || _modelName!.isEmpty) missing.add('Model Name');
-    if (_serialNoController.text.trim().isEmpty) missing.add('Serial No');
-    return missing;
-  }
-
-  List<String> _missingSignatures() {
-    final m = <String>[];
-    if (_customerSignBytes == null) m.add('Customer signature');
-    if (_staffSignBytes == null) m.add('Service staff signature');
-    return m;
-  }
-
-  Future<void> _showIncompleteDialog(List<String> missing, List<String> missingSigns) async {
-    final parts = <String>[];
-    if (missing.isNotEmpty) parts.add('Please fill in:\n${missing.join('\n')}');
-    if (missingSigns.isNotEmpty) parts.add('Missing signature:\n${missingSigns.join('\n')}');
-    if (parts.isEmpty || !mounted) return;
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Incomplete'),
-        content: Text(parts.join('\n\n')),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-      ),
-    );
-  }
-
-  Future<bool> _validateForPreview() async {
-    final missing = _missingRequired();
-    final missingSigns = _missingSignatures();
-    if (missing.isEmpty && missingSigns.isEmpty) return true;
-    if (mounted) setState(() => _showValidation = true);
-    await _showIncompleteDialog(missing, missingSigns);
-    return false;
-  }
-
-  // ============ BUILD ============
-  @override
-  Widget build(BuildContext context) => PreviewShell(
-    pages: [_page1(), _page2()],
-    onBack: () => Navigator.of(context).pop(),
-    onSaveDraft: _isSaving ? null : onSave,
-    onConfirmSend: _isSending ? null : onSend,
-    onReset: onReset,
-    onModeChanged: (review) => setState(() => _snapMode = review),
-    onBeforePreview: _validateForPreview,
-  );
+  Widget build(BuildContext context) => PreviewShell(pages: [
+      _page1(),
+      _page2(),
+  ]);
 
   Widget _page1() => RepaintBoundary(key: _captureKey, child: UnconstrainedBox(
   alignment: Alignment.topLeft,
@@ -1237,14 +839,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[8], top: rs[9], width: cs[29] - cs[8], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _customerName, onSelected: (v) {
-                if (v == null) return;
-                setState(() {
-                  _customerName = v['name'] as String?;
-                  final tel = v['tel'] ?? v['phone'] ?? v['customer_tel'];
-                  if (tel is String) _customerTelController.text = tel;
-                });
-              }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name,tel', fields: 'customer_name,customer_tel', required: true, snapMode: _snapMode, value: _customerName, onSelected: (v) => setState(() => _customerName = v?['customer_name,customer_tel'] as String?)))),
           Positioned(left: cs[29], top: rs[9], width: cs[33] - cs[29], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -1266,19 +861,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[7], top: rs[10], width: cs[20] - cs[7], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'model_name', source: 'machine_models', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _modelName, onSelected: (v) {
-                if (v == null) return;
-                setState(() {
-                  _modelName = v['model_name'] as String?;
-                  // Also remember the picked model so save/send can attach
-                  // its server id (overrides route arg if user re-picks).
-                  _machineModel = v;
-                  final serial = v['serial_no'];
-                  if (serial is String && _serialNoController.text.isEmpty) {
-                    _serialNoController.text = serial;
-                  }
-                });
-              }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'model_name', source: 'machine_models', displayFields: 'model_code,model_name', fields: 'model_name', required: true, snapMode: _snapMode, value: _modelName, onSelected: (v) => setState(() => _modelName = v?['model_name'] as String?)))),
           Positioned(left: cs[20], top: rs[10], width: cs[25] - cs[20], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -2411,7 +1994,7 @@ class ReportScreen2State extends State<ReportScreen2> {
 ),
 ));
 
-  Widget _page2() => RepaintBoundary(key: _captureKey2, child: UnconstrainedBox(
+  Widget _page2() => UnconstrainedBox(
   alignment: Alignment.topLeft,
   child: LayoutBuilder(
   builder: (context, constraints) {
@@ -3003,14 +2586,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[8], top: rs[9], width: cs[29] - cs[8], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _customerName, onSelected: (v) {
-                if (v == null) return;
-                setState(() {
-                  _customerName = v['name'] as String?;
-                  final tel = v['tel'] ?? v['phone'] ?? v['customer_tel'];
-                  if (tel is String) _customerTelController.text = tel;
-                });
-              }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name,tel', fields: 'customer_name,customer_tel', required: true, snapMode: _snapMode, value: _customerName, onSelected: (v) => setState(() => _customerName = v?['customer_name,customer_tel'] as String?)))),
           Positioned(left: cs[29], top: rs[9], width: cs[33] - cs[29], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -3032,19 +2608,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[7], top: rs[10], width: cs[20] - cs[7], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'model_name', source: 'machine_models', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _modelName, onSelected: (v) {
-                if (v == null) return;
-                setState(() {
-                  _modelName = v['model_name'] as String?;
-                  // Also remember the picked model so save/send can attach
-                  // its server id (overrides route arg if user re-picks).
-                  _machineModel = v;
-                  final serial = v['serial_no'];
-                  if (serial is String && _serialNoController.text.isEmpty) {
-                    _serialNoController.text = serial;
-                  }
-                });
-              }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'model_name', source: 'machine_models', displayFields: 'model_code,model_name', fields: 'model_name', required: true, snapMode: _snapMode, value: _modelName, onSelected: (v) => setState(() => _modelName = v?['model_name'] as String?)))),
           Positioned(left: cs[20], top: rs[10], width: cs[25] - cs[20], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -3316,7 +2880,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[15], width: cs[13] - cs[1], height: rs[23] - rs[15], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic1', value: _imageUploadFiles['pic1'], onPicked: (x) => _onImagePicked('pic1', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic1'))),
 
 
 
@@ -3325,7 +2889,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: const SizedBox.shrink())),
           Positioned(left: cs[17], top: rs[15], width: cs[29] - cs[17], height: rs[23] - rs[15], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic2', value: _imageUploadFiles['pic2'], onPicked: (x) => _onImagePicked('pic2', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic2'))),
 
 
 
@@ -3334,7 +2898,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[33], top: rs[15], width: cs[45] - cs[33], height: rs[23] - rs[15], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic3', value: _imageUploadFiles['pic3'], onPicked: (x) => _onImagePicked('pic3', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic3'))),
 
           Positioned(left: cs[0], top: rs[16], width: cs[1] - cs[0], height: rs[17] - rs[16], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
@@ -3571,7 +3135,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[24], width: cs[13] - cs[1], height: rs[32] - rs[24], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic4', value: _imageUploadFiles['pic4'], onPicked: (x) => _onImagePicked('pic4', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic4'))),
 
 
 
@@ -3580,7 +3144,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: const SizedBox.shrink())),
           Positioned(left: cs[17], top: rs[24], width: cs[29] - cs[17], height: rs[32] - rs[24], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic5', value: _imageUploadFiles['pic5'], onPicked: (x) => _onImagePicked('pic5', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic5'))),
 
 
 
@@ -3589,7 +3153,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[33], top: rs[24], width: cs[45] - cs[33], height: rs[32] - rs[24], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic6', value: _imageUploadFiles['pic6'], onPicked: (x) => _onImagePicked('pic6', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic6'))),
 
           Positioned(left: cs[0], top: rs[25], width: cs[1] - cs[0], height: rs[26] - rs[25], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
@@ -4010,7 +3574,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[6], top: rs[38], width: cs[19] - cs[6], height: rs[42] - rs[38], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'customer_sign', label: 'Customer Signature', initialData: _customerSignBytes, onSigned: (v) => setState(() => _customerSignBytes = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'customer_sign', label: 'Customer Signature', onSigned: (v) => setState(() => _customerSignBytes = v)))),
 
 
 
@@ -4023,7 +3587,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[27], top: rs[38], width: cs[40] - cs[27], height: rs[42] - rs[38], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'staff_sign', label: 'Service Staff Signature', initialData: _staffSignBytes, onSigned: (v) => setState(() => _staffSignBytes = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'staff_sign', label: 'Service Staff Signature', onSigned: (v) => setState(() => _staffSignBytes = v)))),
 
 
 
@@ -4532,7 +4096,7 @@ class ReportScreen2State extends State<ReportScreen2> {
     );
   },
 ),
-));
+);
 }
 
 // ============ HELPER CLASSES ============

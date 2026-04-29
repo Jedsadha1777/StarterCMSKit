@@ -66,16 +66,23 @@ class _FormImageUploadState extends State<FormImageUpload> {
   bool get _showCamera => widget.source == 'camera' || widget.source == 'both';
 
   Future<void> _pickFromGallery() async {
+    // Drop keyboard first — picker on top of an active keyboard can leave the
+    // viewport in a half-resized state on some devices (looks like a freeze).
+    FocusManager.instance.primaryFocus?.unfocus();
     final picked = await _picker.pickImage(source: ImageSource.gallery);
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() { _pickedFile = picked; _initialPath = null; });
       widget.onPicked?.call(picked);
     }
   }
 
   Future<void> _pickFromCamera() async {
+    // Same as gallery — also matters for camera because some Android variants
+    // pause-and-resume the Flutter Activity around the camera Intent and a
+    // residual focus/keyboard state can wedge the post-return frame.
+    FocusManager.instance.primaryFocus?.unfocus();
     final picked = await _picker.pickImage(source: ImageSource.camera);
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() { _pickedFile = picked; _initialPath = null; });
       widget.onPicked?.call(picked);
     }

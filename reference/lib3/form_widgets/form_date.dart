@@ -8,6 +8,7 @@ class FormDate extends StatefulWidget {
   final String? max;
   final bool required;
   final bool readonly;
+  final bool snapMode;
   final ValueChanged<String?>? onChanged;
 
   const FormDate({
@@ -19,6 +20,7 @@ class FormDate extends StatefulWidget {
     this.max,
     this.required = false,
     this.readonly = false,
+    this.snapMode = false,
     this.onChanged,
   });
 
@@ -79,18 +81,23 @@ class _FormDateState extends State<FormDate> {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    return SizedBox(
+      width: double.infinity,
+      child: TextField(
       controller: TextEditingController(text: _selected ?? ''),
       readOnly: true,
       onTap: widget.readonly ? null : _pickDate,
       decoration: InputDecoration(
-        border: const OutlineInputBorder(),
+        border: widget.snapMode ? InputBorder.none : const OutlineInputBorder(),
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: widget.snapMode
+            ? const EdgeInsets.symmetric(horizontal: 4, vertical: 4)
+            : const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         hintText: widget.placeholder ?? 'เลือกวันที่',
         suffixIcon: const Icon(Icons.calendar_today, size: 18),
         filled: widget.required,
         fillColor: widget.required ? Colors.yellow.shade50 : null,
+      ),
       ),
     );
   }

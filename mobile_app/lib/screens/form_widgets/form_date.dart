@@ -136,7 +136,6 @@ class _FormDateState extends State<FormDate> {
       controller: _ctrl,
       readOnly: true,
       onTap: (widget.readonly || widget.snapMode) ? null : _pickDate,
-      style: const TextStyle(fontFamily: 'Browallia New', fontSize: 16),
       decoration: decoration,
     );
   }

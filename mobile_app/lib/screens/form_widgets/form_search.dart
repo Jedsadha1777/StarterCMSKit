@@ -75,17 +75,71 @@ class _FormSearchState extends State<FormSearch> {
     super.dispose();
   }
 
+  Future<List<Map<String, dynamic>>> _fetchSource() async {
+    switch (widget.source) {
+      case 'customers':
+        return await LocalDb().getCustomers();
+      case 'machine_models':
+        return await LocalDb().getMachineModels();
+      default:
+        // Unknown source (e.g. 'parts' — no local cache table). Return empty
+        // so the field still works as a free-text input but the dropdown
+        // stays hidden instead of throwing.
+        return const [];
+    }
+  }
+
+  bool _matchesQuery(Map<String, dynamic> row, String q) {
+    switch (widget.source) {
+      case 'customers':
+        return ((row['name'] as String? ?? '').toLowerCase().contains(q)) ||
+               ((row['customer_id'] as String? ?? '').toLowerCase().contains(q));
+      case 'machine_models':
+        return ((row['model_name'] as String? ?? '').toLowerCase().contains(q)) ||
+               ((row['model_code'] as String? ?? '').toLowerCase().contains(q));
+      default:
+        return false;
+    }
+  }
+
+  String _rowDisplay(Map<String, dynamic> row) {
+    switch (widget.source) {
+      case 'customers':
+        return '${row['customer_id'] ?? ''}  ${row['name'] ?? ''}';
+      case 'machine_models':
+        return '${row['model_code'] ?? ''}  ${row['model_name'] ?? ''}';
+      default:
+        return row.values.where((v) => v != null).take(2).join('  ');
+    }
+  }
+
+  String _rowTextValue(Map<String, dynamic> row) {
+    switch (widget.source) {
+      case 'customers':
+        return row['name'] as String? ?? '';
+      case 'machine_models':
+        return row['model_name'] as String? ?? '';
+      default:
+        // Best-effort: pick the first string value as the field text.
+        for (final v in row.values) {
+          if (v is String && v.isNotEmpty) return v;
+        }
+        return '';
+    }
+  }
+
   void _search(String query) async {
     if (query.isEmpty) {
       _removeOverlay();
       return;
     }
-    final customers = await LocalDb().getCustomers();
+    final all = await _fetchSource();
+    if (all.isEmpty) {
+      _removeOverlay();
+      return;
+    }
     final q = query.toLowerCase();
-    final results = customers.where((c) =>
-      (c['name'] as String? ?? '').toLowerCase().contains(q) ||
-      (c['customer_id'] as String? ?? '').toLowerCase().contains(q)
-    ).take(20).toList();
+    final results = all.where((r) => _matchesQuery(r, q)).take(20).toList();
 
     if (results.isEmpty) {
       _removeOverlay();
@@ -111,13 +165,13 @@ class _FormSearchState extends State<FormSearch> {
                 shrinkWrap: true,
                 itemCount: results.length,
                 itemBuilder: (context, index) {
-                  final c = results[index];
+                  final row = results[index];
                   return ListTile(
                     dense: true,
-                    title: Text('${c['customer_id']}  ${c['name']}', style: const TextStyle(fontSize: 12)),
+                    title: Text(_rowDisplay(row), style: const TextStyle(fontSize: 12)),
                     onTap: () {
-                      _ctrl.text = c['name'] as String? ?? '';
-                      widget.onSelected?.call(c);
+                      _ctrl.text = _rowTextValue(row);
+                      widget.onSelected?.call(row);
                       _removeOverlay();
                     },
                   );
@@ -155,22 +209,30 @@ class _FormSearchState extends State<FormSearch> {
 
     return CompositedTransformTarget(
       link: _layerLink,
-      child: ValueListenableBuilder<TextEditingValue>(
-        valueListenable: _ctrl,
-        builder: (_, val, __) {
-          final highlight = widget.required && val.text.trim().isEmpty && widget.showValidation;
-          return TextField(
-            controller: _ctrl,
-            onChanged: _search,
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              hintText: widget.placeholder ?? 'Search...',
-              suffixIcon: const Icon(Icons.search, size: 18),
-              filled: highlight,
-              fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
-            ),
+      child: LayoutBuilder(
+        // Drop the search icon when the cell is too tight (same threshold as
+        // FormTime / FormDate) so the field behaves like a plain text input
+        // in dense layouts.
+        builder: (ctx, c) {
+          final showIcon = !c.maxHeight.isFinite || c.maxHeight >= 36;
+          return ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _ctrl,
+            builder: (_, val, __) {
+              final highlight = widget.required && val.text.trim().isEmpty && widget.showValidation;
+              return TextField(
+                controller: _ctrl,
+                onChanged: _search,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  hintText: widget.placeholder ?? 'Search...',
+                  suffixIcon: showIcon ? const Icon(Icons.search, size: 18) : null,
+                  filled: highlight,
+                  fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
+                ),
+              );
+            },
           );
         },
       ),

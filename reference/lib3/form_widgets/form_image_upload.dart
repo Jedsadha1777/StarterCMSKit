@@ -72,8 +72,8 @@ class _FormImageUploadState extends State<FormImageUpload> {
 
   @override
   Widget build(BuildContext context) {
-    final w = widget.width ?? 150;
-    final h = widget.height ?? 150;
+    final w = widget.width ?? double.infinity;
+    final h = widget.height ?? double.infinity;
 
     return Container(
       width: w,

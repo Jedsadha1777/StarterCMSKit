@@ -9,6 +9,7 @@ class FormTime extends StatefulWidget {
   final int? step;
   final bool required;
   final bool readonly;
+  final bool snapMode;
   final ValueChanged<String?>? onChanged;
 
   const FormTime({
@@ -21,6 +22,7 @@ class FormTime extends StatefulWidget {
     this.step,
     this.required = false,
     this.readonly = false,
+    this.snapMode = false,
     this.onChanged,
   });
 
@@ -96,18 +98,23 @@ class _FormTimeState extends State<FormTime> {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    return SizedBox(
+      width: double.infinity,
+      child: TextField(
       controller: TextEditingController(text: _selected ?? ''),
       readOnly: true,
       onTap: widget.readonly ? null : _pickTime,
       decoration: InputDecoration(
-        border: const OutlineInputBorder(),
+        border: widget.snapMode ? InputBorder.none : const OutlineInputBorder(),
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+        contentPadding: widget.snapMode
+            ? const EdgeInsets.symmetric(horizontal: 4, vertical: 4)
+            : const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         hintText: widget.placeholder ?? 'เลือกเวลา',
         suffixIcon: const Icon(Icons.access_time, size: 18),
         filled: widget.required,
         fillColor: widget.required ? Colors.yellow.shade50 : null,
+      ),
       ),
     );
   }

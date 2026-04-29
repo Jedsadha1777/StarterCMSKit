@@ -101,27 +101,42 @@ class _FormTimeState extends State<FormTime> {
   @override
   Widget build(BuildContext context) {
     final highlight = widget.required && (_selected == null || _selected!.isEmpty) && !widget.snapMode && widget.showValidation;
-    final decoration = widget.snapMode
-        ? const InputDecoration(
-            border: InputBorder.none,
-            isDense: true,
-            contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          )
-        : InputDecoration(
+
+    if (widget.snapMode) {
+      return TextField(
+        controller: TextEditingController(text: _selected ?? ''),
+        readOnly: true,
+        onTap: null,
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+        ),
+      );
+    }
+
+    // Drop suffix icon when the cell is too tight — same idea as a plain
+    // text/number FormInput which has no icon at all. Threshold tuned so the
+    // icon (18px + ~14px container) doesn't squash the text in dense form
+    // layouts where the cell is roughly the height of one input row.
+    return LayoutBuilder(
+      builder: (ctx, c) {
+        final showIcon = !c.maxHeight.isFinite || c.maxHeight >= 36;
+        return TextField(
+          controller: TextEditingController(text: _selected ?? ''),
+          readOnly: true,
+          onTap: widget.readonly ? null : _pickTime,
+          decoration: InputDecoration(
             border: const OutlineInputBorder(),
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             hintText: widget.placeholder ?? 'เลือกเวลา',
-            suffixIcon: const Icon(Icons.access_time, size: 18),
+            suffixIcon: showIcon ? const Icon(Icons.access_time, size: 18) : null,
             filled: highlight,
             fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
-          );
-
-    return TextField(
-      controller: TextEditingController(text: _selected ?? ''),
-      readOnly: true,
-      onTap: (widget.readonly || widget.snapMode) ? null : _pickTime,
-      decoration: decoration,
+          ),
+        );
+      },
     );
   }
 }

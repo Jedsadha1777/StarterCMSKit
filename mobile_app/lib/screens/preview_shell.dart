@@ -82,11 +82,16 @@ class _PreviewShellState extends State<PreviewShell> {
   static const _shellPad = 24.0;
   static const _red = Color(0xFFAD193C);
   static const _scrollSpeed = 3.0;
+  static const double _kReviewFitMargin = 20.0;
 
   final _editCtrl = TransformationController();
   final _reviewCtrl = TransformationController();
   final _scaleNotifier = ValueNotifier<double>(1.0);
   final _bodyKey = GlobalKey();
+  // Scaffold key gives us a BuildContext that's INSIDE the inner MaterialApp,
+  // so showDialog from button callbacks can find MaterialLocalizations even
+  // when PreviewShell happens to be the root widget (demo entry-points).
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _didAutoFit = false;
   bool _ready = false;
   int _resetCounter = 0;
@@ -106,20 +111,26 @@ class _PreviewShellState extends State<PreviewShell> {
       ? _a4Long
       : _a4Short;
 
-  // Edit: cover the viewport — pick whichever scale fills the smaller-axis,
-  // so neither width nor height shows gray. The opposite axis spills past the
-  // viewport, where user pans to access.
+  // Edit mode: WIDTH-fit. Page fills viewport width; tall pages overflow
+  // vertically and the user scrolls. Earlier this used `max(sw, sh)` (cover) —
+  // on portrait phones that filled the HEIGHT and let the page spill past the
+  // viewport sides, forcing horizontal pan to read each line of the form.
+  // No margin in edit mode: maximises input area.
   double _editFitScale(Size viewport) {
     final sw = viewport.width / _paperW;
-    final sh = viewport.height / _paperH;
-    return (sw > sh ? sw : sh).clamp(0.1, 5.0);
+    return sw.clamp(0.1, 5.0);
   }
 
+  // Review mode: WIDTH-fit. Scale so the first page's width fills the viewport
+  // (minus a side margin for breathing room). Height is allowed to overflow —
+  // the user scrolls vertically for tall pages and to reach pages 2..N. We
+  // intentionally do NOT use min(sw, sh) (contain-fit) because on wide viewports
+  // (tablet/landscape/desktop) that height-limits the fit and leaves big gray
+  // bars on the sides instead of filling the screen with readable page content.
   double _reviewFitScale(Size viewport) {
-    final cs = _contentSize(viewport, reviewOverride: true);
-    final sw = viewport.width / cs.width;
-    final sh = viewport.height / cs.height;
-    return (sw < sh ? sw : sh).clamp(0.1, 5.0);
+    final firstPageW = _paperW + _shellPad * 2;
+    final effW = (viewport.width - _kReviewFitMargin * 2).clamp(1.0, double.infinity);
+    return (effW / firstPageW).clamp(0.1, 5.0);
   }
 
   double _modeFitScale(Size viewport) =>
@@ -143,7 +154,8 @@ class _PreviewShellState extends State<PreviewShell> {
   }
 
   // reviewOverride lets _initMode/_toggleMode compute the TARGET mode's cSize
-  // before _reviewMode flips. Without it, switching mode reads stale _reviewMode.
+  // before _reviewMode flips. Without it, switching mode reads stale _reviewMode
+  // and seeds the new ctrl matrix with the wrong cSize → wrong fit → gray + drift.
   Size _contentSize(Size vp, {bool? reviewOverride}) {
     final review = reviewOverride ?? _reviewMode;
     final pad = review ? _shellPad : 0.0;
@@ -155,16 +167,21 @@ class _PreviewShellState extends State<PreviewShell> {
     final naturalCw = _paperW + pad * 2;
     final naturalCh = pad + n * _paperH + totalGaps;
 
+    // Edit: paper exactly fills its content area (no margin); height drives scroll.
     if (!review) return Size(naturalCw, naturalCh);
 
+    // Review: keep natural HEIGHT so multi-page docs are scrollable past page 1.
+    // Pad WIDTH to fitScale × viewport.width so at fit scale the scaled content
+    // matches viewport horizontally — kills the side-slide that InteractiveViewer
+    // would otherwise allow when scaledContent.width < viewport.width
+    // (height-limited fit on wide viewports). Reuse `_reviewFitScale` as the
+    // single source of truth — keeping a separate fit calc here was the bug
+    // that let cw drift out of sync with the actual zoom level.
     if (vp.width <= 0 || vp.height <= 0) return Size(naturalCw, naturalCh);
-    final vpAspect = vp.width / vp.height;
-    final natAspect = naturalCw / naturalCh;
-    if (natAspect < vpAspect) {
-      return Size(naturalCh * vpAspect, naturalCh);
-    } else {
-      return Size(naturalCw, naturalCw / vpAspect);
-    }
+    final fitScale = _reviewFitScale(vp);
+    final neededCw = vp.width / fitScale;
+    final cw = naturalCw > neededCw ? naturalCw : neededCw;
+    return Size(cw, naturalCh);
   }
 
   double _clampTx(double t, double scaledContent, double viewport) {
@@ -207,6 +224,7 @@ class _PreviewShellState extends State<PreviewShell> {
       ty = cy - contentY * s;
       ty = _clampTx(ty, cSize.height * s, vp.height);
     } else {
+      // Top of content for fresh fit — review mode centers vertically instead.
       ty = _reviewMode
           ? _clampTx((vp.height - cSize.height * s) / 2, cSize.height * s, vp.height)
           : 0.0;
@@ -235,6 +253,10 @@ class _PreviewShellState extends State<PreviewShell> {
     _ctrl.value = Matrix4.identity()..translate(newX, newY)..scale(s, s);
   }
 
+  // Compute fit values for `review` mode and set THAT mode's controller matrix.
+  // Each mode has its own TransformationController so pinch-zoom in one doesn't
+  // bleed into the other during AnimatedSwitcher transition (old subtree keeps
+  // its own ctrl while new subtree fades in with this fresh matrix).
   void _initMode(bool review, Size vp) {
     if (vp.width <= 0) return;
     final ctrl = review ? _reviewCtrl : _editCtrl;
@@ -243,10 +265,11 @@ class _PreviewShellState extends State<PreviewShell> {
     final tx = (vp.width - cSize.width * s) / 2;
     double ty;
     if (review) {
-      ty = (vp.height - cSize.height * s) / 2;
-      if (cSize.height * s > vp.height) {
-        ty = ty.clamp(vp.height - cSize.height * s, 0.0);
-      }
+      final scaledH = cSize.height * s;
+      // Multi-page or doc taller than viewport: start at the top of page 1
+      // (user scrolls to reach pages 2..N). Centering would land mid-stack.
+      // Single short doc: center vertically inside the viewport.
+      ty = scaledH > vp.height ? 0.0 : (vp.height - scaledH) / 2;
     } else {
       ty = 0.0;
     }
@@ -297,10 +320,10 @@ class _PreviewShellState extends State<PreviewShell> {
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
           transitionBuilder: _modeTransition,
-          child: Row(
-            key: ValueKey('footer-${_reviewMode ? "review" : "edit"}'),
-            children: _reviewMode
-                ? [
+          child: _reviewMode
+              ? Row(
+                  key: const ValueKey('footer-review'),
+                  children: [
                     const Spacer(),
                     ElevatedButton.icon(
                       onPressed: widget.onConfirmSend,
@@ -311,51 +334,187 @@ class _PreviewShellState extends State<PreviewShell> {
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                       ),
                     ),
-                  ]
-                : [
-                    if (widget.onReset != null)
-                      TextButton.icon(
-                        onPressed: _onResetPressed,
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Reset'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: _red,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        ),
-                      ),
-                    const Spacer(),
-                    if (widget.onSaveDraft != null) ...[
-                      OutlinedButton.icon(
-                        onPressed: widget.onSaveDraft,
-                        icon: const Icon(Icons.save_outlined, size: 18),
-                        label: const Text('Save Draft'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: _red,
-                          side: const BorderSide(color: _red),
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    ElevatedButton.icon(
-                      onPressed: () => _toggleMode(true),
-                      icon: const Icon(Icons.visibility_outlined, size: 18, color: Colors.white),
-                      label: const Text('Preview', style: TextStyle(color: Colors.white)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _red,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      ),
-                    ),
                   ],
-          ),
+                )
+              : LayoutBuilder(
+                  key: const ValueKey('footer-edit'),
+                  // Cascade picks the first level that fits. Shrinks button
+                  // padding/icon FIRST (level 1), then truncates labels in
+                  // order Reset → Save Draft → Preview, then falls back to
+                  // icon-only. See `_editLevels` for the full table.
+                  builder: (ctx, constraints) {
+                    final hasReset = widget.onReset != null;
+                    final hasSave = widget.onSaveDraft != null;
+                    final lv = _pickEditLevel(constraints.maxWidth, hasReset: hasReset, hasSave: hasSave);
+                    return Row(
+                      children: [
+                        if (hasReset)
+                          _editFooterBtn(
+                            kind: _FtrBtnKind.text,
+                            onPressed: _onResetPressed,
+                            icon: Icons.refresh,
+                            label: lv.iconOnly ? null : lv.reset,
+                            hPad: lv.hPad,
+                            iconSize: lv.iconSize,
+                          ),
+                        const Spacer(),
+                        if (hasSave) ...[
+                          _editFooterBtn(
+                            kind: _FtrBtnKind.outlined,
+                            onPressed: widget.onSaveDraft,
+                            icon: Icons.save_outlined,
+                            label: lv.iconOnly ? null : lv.saveDraft,
+                            hPad: lv.hPad,
+                            iconSize: lv.iconSize,
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        _editFooterBtn(
+                          kind: _FtrBtnKind.primary,
+                          onPressed: () => _toggleMode(true),
+                          icon: Icons.visibility_outlined,
+                          label: lv.iconOnly ? null : lv.preview,
+                          hPad: lv.hPad,
+                          iconSize: lv.iconSize,
+                        ),
+                      ],
+                    );
+                  },
+                ),
         ),
       ),
     );
   }
 
+  Widget _editFooterBtn({
+    required _FtrBtnKind kind,
+    required VoidCallback? onPressed,
+    required IconData icon,
+    required String? label,
+    required double hPad,
+    required double iconSize,
+  }) {
+    final pad = EdgeInsets.symmetric(horizontal: hPad, vertical: 8);
+    final isPrimary = kind == _FtrBtnKind.primary;
+    final iconColor = isPrimary ? Colors.white : null;
+    final labelStyle = isPrimary ? const TextStyle(color: Colors.white) : null;
+    final iconWidget = Icon(icon, size: iconSize, color: iconColor);
+    if (label == null) {
+      // Icon-only fallback. Use the non-`.icon` constructor so the button
+      // doesn't reserve label-side spacing — keeps tap target compact.
+      switch (kind) {
+        case _FtrBtnKind.text:
+          return TextButton(
+            onPressed: onPressed,
+            style: TextButton.styleFrom(foregroundColor: _red, padding: pad),
+            child: iconWidget,
+          );
+        case _FtrBtnKind.outlined:
+          return OutlinedButton(
+            onPressed: onPressed,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _red,
+              side: const BorderSide(color: _red),
+              padding: pad,
+            ),
+            child: iconWidget,
+          );
+        case _FtrBtnKind.primary:
+          return ElevatedButton(
+            onPressed: onPressed,
+            style: ElevatedButton.styleFrom(backgroundColor: _red, padding: pad),
+            child: iconWidget,
+          );
+      }
+    }
+    final labelWidget = Text(label, style: labelStyle);
+    switch (kind) {
+      case _FtrBtnKind.text:
+        return TextButton.icon(
+          onPressed: onPressed,
+          icon: iconWidget,
+          label: labelWidget,
+          style: TextButton.styleFrom(foregroundColor: _red, padding: pad),
+        );
+      case _FtrBtnKind.outlined:
+        return OutlinedButton.icon(
+          onPressed: onPressed,
+          icon: iconWidget,
+          label: labelWidget,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _red,
+            side: const BorderSide(color: _red),
+            padding: pad,
+          ),
+        );
+      case _FtrBtnKind.primary:
+        return ElevatedButton.icon(
+          onPressed: onPressed,
+          icon: iconWidget,
+          label: labelWidget,
+          style: ElevatedButton.styleFrom(backgroundColor: _red, padding: pad),
+        );
+    }
+  }
+
+  // Cascade levels (top → bottom). First level whose total estimated width
+  // fits inside `maxWidth` wins. Order:
+  //   0. Default: full labels, default padding (16h) + icon (18)
+  //   1. SHRINK pad/icon FIRST (10h, icon 16) — keeps full labels, still tappable
+  //   2. Reset → Rst
+  //   3. Save Draft → Draft
+  //   4. Preview → View
+  //   5. Icon-only fallback
+  static const List<_EditFooterLevel> _editLevels = [
+    _EditFooterLevel(hPad: 16, iconSize: 18, reset: 'Reset', saveDraft: 'Save Draft', preview: 'Preview'),
+    _EditFooterLevel(hPad: 10, iconSize: 16, reset: 'Reset', saveDraft: 'Save Draft', preview: 'Preview'),
+    _EditFooterLevel(hPad: 10, iconSize: 16, reset: 'Rst',   saveDraft: 'Save Draft', preview: 'Preview'),
+    _EditFooterLevel(hPad: 10, iconSize: 16, reset: 'Rst',   saveDraft: 'Draft',      preview: 'Preview'),
+    _EditFooterLevel(hPad: 10, iconSize: 16, reset: 'Rst',   saveDraft: 'Draft',      preview: 'View'),
+    _EditFooterLevel(hPad: 10, iconSize: 16, reset: '',      saveDraft: '',           preview: '',     iconOnly: true),
+  ];
+
+  _EditFooterLevel _pickEditLevel(double maxWidth, {required bool hasReset, required bool hasSave}) {
+    for (final l in _editLevels) {
+      if (_estimateEditRowWidth(l, hasReset: hasReset, hasSave: hasSave) <= maxWidth) return l;
+    }
+    return _editLevels.last;
+  }
+
+  // Estimate the rendered width of the edit-mode footer row at given level.
+  // Includes per-button horizontal padding (hPad × 2), icon size (iconSize) +
+  // icon→label gap (8) when a label is present, the fixed 8-px gap between
+  // Save Draft and Preview, and a small breathing room for the Spacer.
+  double _estimateEditRowWidth(_EditFooterLevel l, {required bool hasReset, required bool hasSave}) {
+    final btnPadH = l.hPad * 2;
+    final iconW = l.iconSize;
+    const iconLabelGap = 8.0;
+    const fixedGap = 8.0;       // SizedBox between Save Draft and Preview
+    const minSpacer = 16.0;     // visual breathing room for the Spacer
+    double btn(String label) {
+      if (l.iconOnly || label.isEmpty) return btnPadH + iconW;
+      return btnPadH + iconW + iconLabelGap + _measureLabel(label);
+    }
+    double total = btn(l.preview);
+    if (hasReset) total += btn(l.reset);
+    if (hasSave) total += btn(l.saveDraft) + fixedGap;
+    return total + minSpacer;
+  }
+
+  double _measureLabel(String s) {
+    if (s.isEmpty) return 0;
+    final tp = TextPainter(
+      text: TextSpan(text: s, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    return tp.width;
+  }
+
   Future<void> _onResetPressed() async {
+    // Use Scaffold's context (inside MaterialApp), not State.context (above it).
+    final dialogCtx = _scaffoldKey.currentContext ?? context;
     final confirm = await showDialog<bool>(
-      context: context,
+      context: dialogCtx,
       builder: (ctx) => AlertDialog(
         title: const Row(
           children: [
@@ -406,6 +565,7 @@ class _PreviewShellState extends State<PreviewShell> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
+        key: _scaffoldKey,
         backgroundColor: const Color(0xFFE0E0E0),
         bottomNavigationBar: _buildFooter(),
         appBar: AppBar(
@@ -473,120 +633,132 @@ class _PreviewShellState extends State<PreviewShell> {
             const SizedBox(width: 4),
           ],
         ),
-        body: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          color: _reviewMode ? const Color(0xFFD8DEE3) : const Color(0xFFE0E0E0),
-          child: LayoutBuilder(
-            key: _bodyKey,
-            builder: (context, constraints) {
-              final vp = Size(constraints.maxWidth, constraints.maxHeight);
-              final minS = _minScaleForMode(vp);
-              if (!_didAutoFit && constraints.maxWidth > 0) {
-                _didAutoFit = true;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) {
-                    _initMode(_reviewMode, vp);
-                    setState(() => _ready = true);
-                  }
-                });
-              } else if (_scaleNotifier.value < minS - 0.001) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted) _initMode(_reviewMode, vp);
-                });
-              }
-
-              final naturalCw = _paperW + _shellPadForMode * 2;
-              final cSize = _contentSize(vp);
-
-              return Opacity(
-                opacity: _ready ? 1.0 : 0.0,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 320),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  layoutBuilder: (current, previous) => Stack(
-                    children: [
-                      ...previous,
-                      if (current != null) current,
-                    ],
-                  ),
-                  transitionBuilder: (child, animation) {
-                    final isIncoming = (child.key as ValueKey?)?.value == _reviewMode;
-                    final Offset begin;
-                    if (isIncoming) {
-                      begin = _reviewMode ? const Offset(1, 0) : const Offset(-1, 0);
-                    } else {
-                      begin = _reviewMode ? const Offset(-1, 0) : const Offset(1, 0);
+        body: Listener(
+          // Mobile platforms: TextField.onTapOutside default is a no-op (only
+          // desktop unfocuses). Pointer-down → unfocus the current primary
+          // focus. If the touch lands on a TextField, gesture arena resolves
+          // at PointerUp and the TextField re-claims focus, so this only
+          // dismisses when the touch is OUTSIDE every TextField. Listener
+          // observes events without competing in the gesture arena, so it
+          // doesn't disturb InteractiveViewer's pan/scale or TextField taps.
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) =>
+              FocusManager.instance.primaryFocus?.unfocus(),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            color: _reviewMode ? const Color(0xFFD8DEE3) : const Color(0xFFE0E0E0),
+            child: LayoutBuilder(
+              key: _bodyKey,
+              builder: (context, constraints) {
+                final vp = Size(constraints.maxWidth, constraints.maxHeight);
+                final minS = _minScaleForMode(vp);
+                if (!_didAutoFit && constraints.maxWidth > 0) {
+                  _didAutoFit = true;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) {
+                      _initMode(_reviewMode, vp);
+                      setState(() => _ready = true);
                     }
-                    return SlideTransition(
-                      position: Tween<Offset>(begin: begin, end: Offset.zero).animate(animation),
-                      child: child,
-                    );
-                  },
-                  child: KeyedSubtree(
-                    key: ValueKey(_reviewMode),
-                    child: Listener(
-                      onPointerSignal: (e) {
-                        if (e is PointerScrollEvent) _onPointerScroll(e);
-                      },
-                      child: InteractiveViewer(
-                        transformationController: _ctrl,
-                        constrained: false,
-                        minScale: _minScaleForMode(vp),
-                        maxScale: _maxScaleForMode(vp),
-                        boundaryMargin: EdgeInsets.zero,
-                        onInteractionUpdate: (_) {
-                          final s = _ctrl.value.getMaxScaleOnAxis();
-                          if ((s - _scaleNotifier.value).abs() > 0.001) {
-                            _scaleNotifier.value = s;
-                          }
+                  });
+                } else if (_scaleNotifier.value < minS - 0.001) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _initMode(_reviewMode, vp);
+                  });
+                }
+
+                final naturalCw = _paperW + _shellPadForMode * 2;
+                final cSize = _contentSize(vp);
+
+                return Opacity(
+                  opacity: _ready ? 1.0 : 0.0,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 320),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    layoutBuilder: (current, previous) => Stack(
+                      children: [
+                        ...previous,
+                        if (current != null) current,
+                      ],
+                    ),
+                    transitionBuilder: (child, animation) {
+                      final isIncoming = (child.key as ValueKey?)?.value == _reviewMode;
+                      final Offset begin;
+                      if (isIncoming) {
+                        begin = _reviewMode ? const Offset(1, 0) : const Offset(-1, 0);
+                      } else {
+                        begin = _reviewMode ? const Offset(-1, 0) : const Offset(1, 0);
+                      }
+                      return SlideTransition(
+                        position: Tween<Offset>(begin: begin, end: Offset.zero).animate(animation),
+                        child: child,
+                      );
+                    },
+                    child: KeyedSubtree(
+                      key: ValueKey(_reviewMode),
+                      child: Listener(
+                        onPointerSignal: (e) {
+                          if (e is PointerScrollEvent) _onPointerScroll(e);
                         },
-                        child: SizedBox(
-                          width: cSize.width,
-                          height: cSize.height,
-                          child: Center(
-                            child: SizedBox(
-                              width: naturalCw,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(height: _shellPadForMode),
-                                  for (int i = 0; i < widget.pages.length; i++)
-                                    Padding(
-                                      padding: EdgeInsets.only(
-                                        bottom: _gapAfter(i) + _shellPadForMode,
-                                      ),
-                                      child: Center(
-                                        child: Container(
-                                          width: _paperW,
-                                          height: _paperH,
-                                          decoration: const BoxDecoration(
-                                            color: Colors.white,
-                                            boxShadow: [
-                                              BoxShadow(
-                                                  color: Color(0x40000000),
-                                                  blurRadius: 10,
-                                                  offset: Offset(0, 4)),
-                                            ],
-                                          ),
-                                          clipBehavior: Clip.hardEdge,
-                                          child: RepaintBoundary(
-                                            child: IgnorePointer(
-                                              ignoring: _reviewMode,
-                                              child: _ScaledContent(
-                                                key: ValueKey('$_resetCounter-$i'),
-                                                content: widget.pages[i],
-                                                paperWidth: _paperW,
-                                                paperHeight: _paperH,
-                                                pagePadding: _effectivePagePadding,
-                                                fitHeight: widget.fitHeight,
+                        child: InteractiveViewer(
+                          transformationController: _ctrl,
+                          constrained: false,
+                          minScale: _minScaleForMode(vp),
+                          maxScale: _maxScaleForMode(vp),
+                          boundaryMargin: EdgeInsets.zero,
+                          onInteractionUpdate: (_) {
+                            final s = _ctrl.value.getMaxScaleOnAxis();
+                            if ((s - _scaleNotifier.value).abs() > 0.001) {
+                              _scaleNotifier.value = s;
+                            }
+                          },
+                          child: SizedBox(
+                            width: cSize.width,
+                            height: cSize.height,
+                            child: Center(
+                              child: SizedBox(
+                                width: naturalCw,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    SizedBox(height: _shellPadForMode),
+                                    for (int i = 0; i < widget.pages.length; i++)
+                                      Padding(
+                                        padding: EdgeInsets.only(
+                                          bottom: _gapAfter(i) + _shellPadForMode,
+                                        ),
+                                        child: Center(
+                                          child: Container(
+                                            width: _paperW,
+                                            height: _paperH,
+                                            decoration: const BoxDecoration(
+                                              color: Colors.white,
+                                              boxShadow: [
+                                                BoxShadow(
+                                                    color: Color(0x40000000),
+                                                    blurRadius: 10,
+                                                    offset: Offset(0, 4)),
+                                              ],
+                                            ),
+                                            clipBehavior: Clip.hardEdge,
+                                            child: RepaintBoundary(
+                                              child: IgnorePointer(
+                                                ignoring: _reviewMode,
+                                                child: _ScaledContent(
+                                                  key: ValueKey('$_resetCounter-$i'),
+                                                  content: widget.pages[i],
+                                                  paperWidth: _paperW,
+                                                  paperHeight: _paperH,
+                                                  pagePadding: _effectivePagePadding,
+                                                  fitHeight: widget.fitHeight,
+                                                ),
                                               ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -594,14 +766,38 @@ class _PreviewShellState extends State<PreviewShell> {
                       ),
                     ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+enum _FtrBtnKind { text, outlined, primary }
+
+// One step in the edit-mode footer's responsive cascade. The cascade tries
+// levels top → bottom; the first whose estimated row width fits the available
+// space wins. Compactness escalates by SHRINKING THE BUTTONS FIRST (hPad +
+// iconSize) before truncating any label text — narrowed labels are harder to
+// understand than slightly smaller (but still tappable) buttons.
+class _EditFooterLevel {
+  final double hPad;
+  final double iconSize;
+  final String reset;
+  final String saveDraft;
+  final String preview;
+  final bool iconOnly;
+  const _EditFooterLevel({
+    required this.hPad,
+    required this.iconSize,
+    required this.reset,
+    required this.saveDraft,
+    required this.preview,
+    this.iconOnly = false,
+  });
 }
 
 // ── _ScaledContent ───────────────────────────────────────────────────────────

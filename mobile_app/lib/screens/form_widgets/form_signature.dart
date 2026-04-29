@@ -97,13 +97,32 @@ class _FormSignatureState extends State<FormSignature> {
                 ))
           : (widget.snapMode
               ? const SizedBox.shrink()
-              : Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.draw_outlined, size: 24, color: Colors.grey.shade400),
-                    const SizedBox(height: 4),
-                    Text('Tap to sign', style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
-                  ],
+              : LayoutBuilder(
+                  // Cell may be only ~20-40px tall in dense forms — Icon 24 +
+                  // gap 4 + Text 11px (line height ≥ 14) overflows. Degrade:
+                  // h<24 hide, h<44 icon-only (sized to fit), else full label.
+                  builder: (ctx, c) {
+                    final h = c.maxHeight.isFinite ? c.maxHeight : 100.0;
+                    if (h < 24) {
+                      return const SizedBox.shrink();
+                    }
+                    if (h < 44) {
+                      return Center(
+                        child: Icon(Icons.draw_outlined,
+                            size: (h - 4).clamp(12.0, 24.0),
+                            color: Colors.grey.shade400),
+                      );
+                    }
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.draw_outlined, size: 24, color: Colors.grey.shade400),
+                        const SizedBox(height: 4),
+                        Text('Tap to sign', style: TextStyle(color: Colors.grey.shade400, fontSize: 11)),
+                      ],
+                    );
+                  },
                 )),
     );
 
