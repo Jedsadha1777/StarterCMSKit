@@ -27,7 +27,7 @@ class LocalDb {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE articles (
@@ -53,6 +53,8 @@ class LocalDb {
 
         await _createV2Tables(db);
         await _upgradeToV3(db); // safe — check column exists ก่อน ADD
+        await _upgradeToV4(db);
+        await _upgradeToV5(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -60,6 +62,12 @@ class LocalDb {
         }
         if (oldVersion < 3) {
           await _upgradeToV3(db);
+        }
+        if (oldVersion < 4) {
+          await _upgradeToV4(db);
+        }
+        if (oldVersion < 5) {
+          await _upgradeToV5(db);
         }
       },
     );
@@ -216,6 +224,28 @@ class LocalDb {
     }
   }
 
+  static Future<void> _upgradeToV4(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(cached_customers)');
+    final columnNames = columns.map((c) => c['name'] as String).toSet();
+    if (!columnNames.contains('tel')) {
+      await db.execute('ALTER TABLE cached_customers ADD COLUMN tel TEXT');
+    }
+    if (!columnNames.contains('fax')) {
+      await db.execute('ALTER TABLE cached_customers ADD COLUMN fax TEXT');
+    }
+  }
+
+  static Future<void> _upgradeToV5(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS cached_parts (
+        id TEXT PRIMARY KEY,
+        parts_code TEXT NOT NULL,
+        parts_name TEXT NOT NULL,
+        unit_price REAL NOT NULL DEFAULT 0
+      )
+    ''');
+  }
+
   // ==================== Machine Models Cache ====================
 
   Future<void> replaceAllMachineModels(List<Map<String, dynamic>> models) async {
@@ -265,6 +295,8 @@ class LocalDb {
           'customer_id': c['customer_id'],
           'name': c['name'],
           'address': c['address'] ?? '',
+          'tel': c['tel'] ?? '',
+          'fax': c['fax'] ?? '',
         });
       }
     });
@@ -273,6 +305,28 @@ class LocalDb {
   Future<List<Map<String, dynamic>>> getCustomers() async {
     final db = await database;
     return await db.query('cached_customers', orderBy: 'name ASC');
+  }
+
+  // ==================== Parts Cache ====================
+
+  Future<void> replaceAllParts(List<Map<String, dynamic>> parts) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.delete('cached_parts');
+      for (final p in parts) {
+        await txn.insert('cached_parts', {
+          'id': p['id'],
+          'parts_code': p['parts_code'] ?? '',
+          'parts_name': p['parts_name'] ?? '',
+          'unit_price': (p['unit_price'] is num) ? (p['unit_price'] as num).toDouble() : 0.0,
+        });
+      }
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getParts() async {
+    final db = await database;
+    return await db.query('cached_parts', orderBy: 'parts_name ASC');
   }
 
   // ==================== Report Drafts ====================

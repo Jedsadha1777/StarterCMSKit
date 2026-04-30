@@ -146,6 +146,7 @@ class _FormSearchState extends State<FormSearch> {
   void _search(String query) async {
     if (query.isEmpty) {
       _removeOverlay();
+      widget.onCleared?.call();
       return;
     }
     final all = await _fetchSource();
@@ -234,25 +235,6 @@ class _FormSearchState extends State<FormSearch> {
             valueListenable: _ctrl,
             builder: (_, val, __) {
               final highlight = widget.required && val.text.trim().isEmpty && widget.showValidation;
-              final hasValue = val.text.trim().isNotEmpty;
-              // Clear (X) button always shows when value present + onCleared wired,
-              // regardless of cell height (it's an important action). Search icon
-              // is decorative and only shows in tall cells.
-              final Widget? suffix;
-              if (hasValue && widget.onCleared != null) {
-                suffix = GestureDetector(
-                  onTap: widget.onCleared,
-                  behavior: HitTestBehavior.opaque,
-                  child: const Padding(
-                    padding: EdgeInsets.all(4),
-                    child: Icon(Icons.close, size: 14, color: Colors.red),
-                  ),
-                );
-              } else if (showIcon) {
-                suffix = const Icon(Icons.search, size: 18);
-              } else {
-                suffix = null;
-              }
               return TextField(
                 controller: _ctrl,
                 enabled: widget.enabled,
@@ -262,7 +244,7 @@ class _FormSearchState extends State<FormSearch> {
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                   hintText: widget.placeholder ?? 'Search...',
-                  suffixIcon: suffix,
+                  suffixIcon: showIcon ? const Icon(Icons.search, size: 18) : null,
                   filled: highlight,
                   fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
                 ),

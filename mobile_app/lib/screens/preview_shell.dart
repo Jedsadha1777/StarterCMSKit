@@ -669,34 +669,18 @@ class _PreviewShellState extends State<PreviewShell> {
                 final naturalCw = _paperW + _shellPadForMode * 2;
                 final cSize = _contentSize(vp);
 
+                // Note: AnimatedSwitcher removed here. The pages contain
+                // RepaintBoundary widgets keyed with GlobalKeys (used for
+                // screenshot capture). AnimatedSwitcher's layoutBuilder kept
+                // both previous + current children in the tree during the
+                // 320ms transition — causing "Duplicate GlobalKeys" framework
+                // assertion that broke onSend's setState/capture flow silently.
+                // Direct switch trades the slide animation for correctness.
                 return Opacity(
                   opacity: _ready ? 1.0 : 0.0,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 320),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    layoutBuilder: (current, previous) => Stack(
-                      children: [
-                        ...previous,
-                        if (current != null) current,
-                      ],
-                    ),
-                    transitionBuilder: (child, animation) {
-                      final isIncoming = (child.key as ValueKey?)?.value == _reviewMode;
-                      final Offset begin;
-                      if (isIncoming) {
-                        begin = _reviewMode ? const Offset(1, 0) : const Offset(-1, 0);
-                      } else {
-                        begin = _reviewMode ? const Offset(-1, 0) : const Offset(1, 0);
-                      }
-                      return SlideTransition(
-                        position: Tween<Offset>(begin: begin, end: Offset.zero).animate(animation),
-                        child: child,
-                      );
-                    },
-                    child: KeyedSubtree(
-                      key: ValueKey(_reviewMode),
-                      child: Listener(
+                  child: KeyedSubtree(
+                    key: ValueKey(_reviewMode),
+                    child: Listener(
                         onPointerSignal: (e) {
                           if (e is PointerScrollEvent) _onPointerScroll(e);
                         },
@@ -765,9 +749,8 @@ class _PreviewShellState extends State<PreviewShell> {
                         ),
                       ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
             ),
           ),
         ),

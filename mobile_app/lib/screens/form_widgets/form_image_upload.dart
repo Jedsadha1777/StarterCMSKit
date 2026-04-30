@@ -10,6 +10,7 @@ class FormImageUpload extends StatefulWidget {
   final double? height;
   final String? value;
   final bool required;
+  final bool snapMode;
   final ValueChanged<XFile?>? onPicked;
 
   const FormImageUpload({
@@ -20,6 +21,7 @@ class FormImageUpload extends StatefulWidget {
     this.height,
     this.value,
     this.required = false,
+    this.snapMode = false,
     this.onPicked,
   });
 
@@ -97,10 +99,20 @@ class _FormImageUploadState extends State<FormImageUpload> {
   Widget build(BuildContext context) {
     // ถ้า caller ไม่ส่ง width/height → ใช้ infinity เพื่อ fill parent constraints
     // (Container จะถูก clamp ตาม max ของ parent — ใช้ได้กับ parent ที่ bounded เช่น Positioned/SizedBox)
+    final Widget child;
+    if (widget.snapMode) {
+      child = _hasImage
+          ? (kIsWeb
+              ? Image.network(_displayPath, fit: BoxFit.contain)
+              : Image.file(File(_displayPath), fit: BoxFit.contain))
+          : const SizedBox.shrink();
+    } else {
+      child = _hasImage ? _buildPreview() : _buildButtons();
+    }
     return Container(
       width: widget.width ?? double.infinity,
       height: widget.height ?? double.infinity,
-      child: _hasImage ? _buildPreview() : _buildButtons(),
+      child: child,
     );
   }
 

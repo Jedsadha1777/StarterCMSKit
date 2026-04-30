@@ -10,6 +10,9 @@ class FormCheckbox extends StatefulWidget {
   final bool required;
   final bool snapMode;
   final bool showValidation;
+  /// When true, group options spread across the row with spaceEvenly.
+  /// When false (default), options pack together with Wrap (line-break on overflow).
+  final bool rowLayout;
   final ValueChanged<dynamic>? onChanged;
 
   const FormCheckbox({
@@ -23,6 +26,7 @@ class FormCheckbox extends StatefulWidget {
     this.required = false,
     this.snapMode = false,
     this.showValidation = false,
+    this.rowLayout = false,
     this.onChanged,
   });
 
@@ -63,11 +67,25 @@ class _FormCheckboxState extends State<FormCheckbox> {
   @override
   void initState() {
     super.initState();
+    _syncFromWidgetValue();
+  }
+
+  @override
+  void didUpdateWidget(covariant FormCheckbox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value) {
+      _syncFromWidgetValue();
+    }
+  }
+
+  void _syncFromWidgetValue() {
     if (widget.isGroup) {
+      _selected.clear();
       if (widget.value is Map) {
         final sel = widget.value['selected'];
         if (sel is List) _selected.addAll(sel.cast<String>());
-        _otherCtrl.text = (widget.value['other_text'] ?? '').toString();
+        final newOther = (widget.value['other_text'] ?? '').toString();
+        if (_otherCtrl.text != newOther) _otherCtrl.text = newOther;
       }
     } else {
       _singleValue = widget.value == true;
@@ -104,9 +122,12 @@ class _FormCheckboxState extends State<FormCheckbox> {
 
   Widget _buildSingle() {
     final checkbox = _wrap(Checkbox(
+      fillColor: const WidgetStatePropertyAll(Colors.white),
+      checkColor: Colors.black,
+      side: WidgetStateBorderSide.resolveWith((_) => const BorderSide(color: Colors.black, width: 1)),
       value: _singleValue,
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      visualDensity: VisualDensity.compact,
+      visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
       onChanged: widget.disabled
           ? null
           : (v) {
@@ -116,9 +137,17 @@ class _FormCheckboxState extends State<FormCheckbox> {
     ));
 
     if (widget.label != null) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [checkbox, Flexible(child: Text(widget.label!))],
+      return InkWell(
+        onTap: widget.disabled
+            ? null
+            : () {
+                setState(() => _singleValue = !_singleValue);
+                widget.onChanged?.call(_singleValue);
+              },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [checkbox, Flexible(child: Text(widget.label!))],
+        ),
       );
     }
     return checkbox;
@@ -128,53 +157,80 @@ class _FormCheckboxState extends State<FormCheckbox> {
     final children = <Widget>[];
 
     for (final opt in widget.options) {
-      children.add(Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _wrap(Checkbox(
-            value: _selected.contains(opt),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-            onChanged: widget.disabled
-                ? null
-                : (v) {
-                    setState(() {
-                      if (v == true) {
-                        _selected.add(opt);
-                      } else {
-                        _selected.remove(opt);
-                      }
-                    });
-                    _emitGroup();
-                  },
-          )),
-          Flexible(child: Text(opt)),
-        ],
+      children.add(InkWell(
+        onTap: widget.disabled
+            ? null
+            : () {
+                setState(() {
+                  if (_selected.contains(opt)) {
+                    _selected.remove(opt);
+                  } else {
+                    _selected.add(opt);
+                  }
+                });
+                _emitGroup();
+              },
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _wrap(Checkbox(
+              fillColor: const WidgetStatePropertyAll(Colors.white),
+              checkColor: Colors.black,
+              side: WidgetStateBorderSide.resolveWith((_) => const BorderSide(color: Colors.black, width: 1)),
+              value: _selected.contains(opt),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+              onChanged: widget.disabled
+                  ? null
+                  : (v) {
+                      setState(() {
+                        if (v == true) {
+                          _selected.add(opt);
+                        } else {
+                          _selected.remove(opt);
+                        }
+                      });
+                      _emitGroup();
+                    },
+            )),
+            Flexible(child: Text(opt)),
+          ],
+        ),
       ));
     }
 
     if (widget.hasOther) {
+      void toggleOther() {
+        setState(() {
+          if (_selected.contains('Other')) {
+            _selected.remove('Other');
+          } else {
+            _selected.add('Other');
+          }
+        });
+        _emitGroup();
+      }
       children.add(Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _wrap(Checkbox(
-            value: _selected.contains('Other'),
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-            onChanged: widget.disabled
-                ? null
-                : (v) {
-                    setState(() {
-                      if (v == true) {
-                        _selected.add('Other');
-                      } else {
-                        _selected.remove('Other');
-                      }
-                    });
-                    _emitGroup();
-                  },
-          )),
-          const Text('Other: '),
+          InkWell(
+            onTap: widget.disabled ? null : toggleOther,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _wrap(Checkbox(
+                  fillColor: const WidgetStatePropertyAll(Colors.white),
+                  checkColor: Colors.black,
+                  side: WidgetStateBorderSide.resolveWith((_) => const BorderSide(color: Colors.black, width: 1)),
+                  value: _selected.contains('Other'),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                  onChanged: widget.disabled ? null : (_) => toggleOther(),
+                )),
+                const Text('Other: '),
+              ],
+            ),
+          ),
           SizedBox(
             width: 120,
             child: TextField(
@@ -192,6 +248,13 @@ class _FormCheckboxState extends State<FormCheckbox> {
       ));
     }
 
+    if (widget.rowLayout) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: children,
+      );
+    }
     return Wrap(spacing: 8, runSpacing: 4, children: children);
   }
 }

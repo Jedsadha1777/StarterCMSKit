@@ -57,6 +57,14 @@ class _FormTimeState extends State<FormTime> {
     _selected = widget.value;
   }
 
+  @override
+  void didUpdateWidget(covariant FormTime oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value && widget.value != _selected) {
+      _selected = widget.value;
+    }
+  }
+
   TimeOfDay? _parseTime(String? s) {
     if (s == null || s.isEmpty) return null;
     final parts = s.split(':');

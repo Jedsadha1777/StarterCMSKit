@@ -63,6 +63,14 @@ class _FormSelectState extends State<FormSelect> {
   }
 
   @override
+  void didUpdateWidget(covariant FormSelect oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value != oldWidget.value && widget.value != _selected) {
+      _selected = widget.value;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     if (widget.snapMode) {
       return Padding(

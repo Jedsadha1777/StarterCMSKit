@@ -32,9 +32,13 @@ class MasterDataService {
       final customers = (data['customers'] as List?)
           ?.map((e) => e as Map<String, dynamic>)
           .toList() ?? [];
+      final parts = (data['parts'] as List?)
+          ?.map((e) => e as Map<String, dynamic>)
+          .toList() ?? [];
 
       await _db.replaceAllMachineModels(machineModels);
       await _db.replaceAllCustomers(customers);
+      await _db.replaceAllParts(parts);
 
       // Save date_format setting
       final settings = data['settings'] as Map<String, dynamic>?;

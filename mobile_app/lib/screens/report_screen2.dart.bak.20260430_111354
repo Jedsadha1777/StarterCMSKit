@@ -660,42 +660,41 @@ class ReportScreen2State extends State<ReportScreen2> {
 
   Future<void> onSend() async {
     if (_isSending) return;
+
+    final collected = await _collectData();
+    await LocalDb().saveDraft(
+      draftId: _draftId!,
+      machineModelId: _machineModel?['id'] ?? '',
+      formData: collected,
+    );
+
+    if (!ConnectivityService().isOnline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No internet connection. Please save as draft.')),
+      );
+      return;
+    }
+
+    final missing = _missingRequired();
+    final missingSigns = _missingSignatures();
+    if (missing.isNotEmpty || missingSigns.isNotEmpty) {
+      if (mounted) setState(() => _showValidation = true);
+      await _showIncompleteDialog(missing, missingSigns);
+      return;
+    }
+
+    final emails = await showEmailDialog(context);
+    if (emails == null || emails.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Send cancelled (no recipient email).')),
+        );
+      }
+      return;
+    }
+
     setState(() => _isSending = true);
     try {
-      final collected = await _collectData();
-      await LocalDb().saveDraft(
-        draftId: _draftId!,
-        machineModelId: _machineModel?['id'] ?? '',
-        formData: collected,
-      );
-
-      if (!ConnectivityService().isOnline) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No internet connection. Please save as draft.')),
-          );
-        }
-        return;
-      }
-
-      final missing = _missingRequired();
-      final missingSigns = _missingSignatures();
-      if (missing.isNotEmpty || missingSigns.isNotEmpty) {
-        if (mounted) setState(() => _showValidation = true);
-        await _showIncompleteDialog(missing, missingSigns);
-        return;
-      }
-
-      final emails = await showEmailDialog(context);
-      if (emails == null || emails.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Send cancelled (no recipient email).')),
-          );
-        }
-        return;
-      }
-
       String? reportNo;
       String? reportId;
 
@@ -1990,22 +1989,22 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[32], width: cs[3] - cs[1], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo1Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partNo1Controller, fontSize: 14.6))),
           Positioned(left: cs[3], top: rs[32], width: cs[21] - cs[3], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_1', source: 'parts', displayFields: 'parts_code,parts_name,unit_price', fields: 'part_name_1,part_code1,unit_price1', enabled: _isPartRowEnabled(1), onCleared: () => _clearPartRow(1), snapMode: _snapMode, showValidation: _showValidation, value: _partName1, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName1 = n; }, codeCtrl: _partCode1Controller, priceCtrl: _unitPrice1Controller, qtyCtrl: _partQty1Controller, totalCtrl: _partTotal1Controller)))),
           Positioned(left: cs[21], top: rs[32], width: cs[26] - cs[21], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode1Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode1Controller, fontSize: 16))),
           Positioned(left: cs[26], top: rs[32], width: cs[30] - cs[26], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: ((_partNameFor(1) ?? "").isNotEmpty) ? TextField(controller: _partQty1Controller, keyboardType: TextInputType.number, textAlign: TextAlign.right, onChanged: (_) => _recalcPartTotal(_partQty1Controller, _unitPrice1Controller, _partTotal1Controller), style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: ((_partNameFor(1) ?? "").isNotEmpty) ? TextField(controller: _partQty1Controller, keyboardType: TextInputType.number, textAlign: TextAlign.right, onChanged: (_) => _recalcPartTotal(_partQty1Controller, _unitPrice1Controller, _partTotal1Controller), style: const TextStyle(fontFamily: 'Calibri', fontSize: 16), decoration: _inputDecoration) : const SizedBox.shrink())),
           Positioned(left: cs[30], top: rs[32], width: cs[36] - cs[30], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_unitPrice1Controller, textAlign: TextAlign.right))),
           Positioned(left: cs[36], top: rs[32], width: cs[45] - cs[36], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partTotal1Controller, fontSize: 14.6, textAlign: TextAlign.right))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partTotal1Controller, fontSize: 16, textAlign: TextAlign.right))),
 
           Positioned(left: cs[0], top: rs[33], width: cs[1] - cs[0], height: rs[34] - rs[33], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
@@ -2426,7 +2425,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[9], top: rs[48], width: cs[13] - cs[9], height: rs[49] - rs[48], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color.fromRGBO(0, 0, 0, 1), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _chargeRateController, textAlign: TextAlign.right, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) => _recalcPartFeeTotal(), style: const TextStyle(fontFamily: 'Arial', fontSize: 17.3), decoration: _inputDecoration))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _chargeRateController, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) => _recalcPartFeeTotal(), style: const TextStyle(fontFamily: 'Arial', fontSize: 17.3), decoration: _inputDecoration))),
           Positioned(left: cs[13], top: rs[48], width: cs[14] - cs[13], height: rs[49] - rs[48], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color.fromRGBO(0, 0, 0, 1), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -2435,7 +2434,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[14], top: rs[48], width: cs[18] - cs[14], height: rs[49] - rs[48], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color.fromRGBO(0, 0, 0, 1), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _chargeHrsController, textAlign: TextAlign.right, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) => _recalcPartFeeTotal(), style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _chargeHrsController, keyboardType: const TextInputType.numberWithOptions(decimal: true), onChanged: (_) => _recalcPartFeeTotal(), style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration))),
           Positioned(left: cs[18], top: rs[48], width: cs[21] - cs[18], height: rs[49] - rs[48], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color.fromRGBO(0, 0, 0, 1), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(

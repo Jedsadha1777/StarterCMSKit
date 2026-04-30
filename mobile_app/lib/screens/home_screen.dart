@@ -98,14 +98,14 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 32),
             _menuButton(
               icon: Icons.assessment,
-              label: 'Report',
+              label: 'Inspection Report',
               onPressed: () => Navigator.pushNamed(context, '/model-selection'),
             ),
             const SizedBox(height: 16),
             _menuButton(
               icon: Icons.assignment,
-              label: 'Report 2',
-              onPressed: () => Navigator.pushNamed(context, '/model-selection', arguments: {'target': '/report2'}),
+              label: 'Service Report',
+              onPressed: () => Navigator.pushNamed(context, '/report2'),
             ),
             const SizedBox(height: 16),
             _menuButton(
