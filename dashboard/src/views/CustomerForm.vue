@@ -1,7 +1,9 @@
 <template>
   <FormPage :title="isEdit ? 'Edit Customer' : 'Register Customer'" backTo="/customers" :error="error" :loading="loading" @submit="handleSubmit">
     <v-text-field v-model="form.customer_id" label="Customer ID *" variant="outlined" required class="mb-4" :disabled="isEdit" :rules="[customerIdRule]" hint="English letters, numbers, hyphens or underscores only (no spaces)" persistent-hint />
-    <v-text-field v-model="form.name" label="Name *" variant="outlined" required class="mb-4" />
+    <v-text-field v-model="form.name" label="Company Name *" variant="outlined" required class="mb-4" />
+    <v-text-field v-model="form.contact_name" label="Contact Person" variant="outlined" class="mb-4" />
+    <v-text-field v-model="form.email" label="Email" variant="outlined" type="email" class="mb-4" />
     <v-textarea v-model="form.address" label="Address" variant="outlined" rows="3" class="mb-4" />
     <v-text-field v-model="form.tel" label="Tel" variant="outlined" class="mb-4" />
     <v-text-field v-model="form.fax" label="Fax" variant="outlined" class="mb-4" />
@@ -18,7 +20,7 @@ export default {
   components: { FormPage },
   setup() {
     const route = useRoute(); const router = useRouter()
-    const form = ref({ customer_id: '', name: '', address: '', tel: '', fax: '' }); const error = ref(''); const loading = ref(false)
+    const form = ref({ customer_id: '', name: '', contact_name: '', email: '', address: '', tel: '', fax: '' }); const error = ref(''); const loading = ref(false)
     const isEdit = computed(() => !!route.params.id)
     const customerIdRule = (v) => !v || /^[A-Za-z0-9\-_]+$/.test(v) || 'English letters, numbers, hyphens or underscores only (no spaces)'
 
@@ -28,6 +30,8 @@ export default {
         const { data } = await api.getCustomer(route.params.id)
         form.value.customer_id = data.customer_id
         form.value.name = data.name
+        form.value.contact_name = data.contact_name || ''
+        form.value.email = data.email || ''
         form.value.address = data.address || ''
         form.value.tel = data.tel || ''
         form.value.fax = data.fax || ''
@@ -37,7 +41,7 @@ export default {
     const handleSubmit = async () => {
       error.value = ''; loading.value = true
       try {
-        const payload = { customer_id: form.value.customer_id, name: form.value.name, address: form.value.address, tel: form.value.tel, fax: form.value.fax }
+        const payload = { customer_id: form.value.customer_id, name: form.value.name, contact_name: form.value.contact_name, email: form.value.email, address: form.value.address, tel: form.value.tel, fax: form.value.fax }
         if (isEdit.value) {
           await api.updateCustomer(route.params.id, payload)
         } else {

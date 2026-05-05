@@ -32,7 +32,7 @@ class ReportScreen2 extends StatefulWidget {
 class ReportScreen2State extends State<ReportScreen2> {
 
   // ============ CONTROLLERS ============
-  final _customerTelController = TextEditingController();
+  final _customerContactController = TextEditingController();
   final _serialNoController = TextEditingController();
   final _detailOfServiceController = TextEditingController();
   final _conditionController = TextEditingController();
@@ -120,7 +120,7 @@ class ReportScreen2State extends State<ReportScreen2> {
   final _staffSignNameController = TextEditingController();
 
   Map<String, TextEditingController> get _controllerMap => {
-    'customerTel': _customerTelController,
+    'customerContact': _customerContactController,
     'serialNo': _serialNoController,
     'detailOfService': _detailOfServiceController,
     'condition': _conditionController,
@@ -238,6 +238,7 @@ class ReportScreen2State extends State<ReportScreen2> {
   String? _timeIn;
   String? _timeOut;
   String? _customerName;
+  String? _customerEmail;     // captured on customer pick — pre-fills email dialog
   String? _modelName;
   String? _partName1;
   String? _partName2;
@@ -417,6 +418,7 @@ class ReportScreen2State extends State<ReportScreen2> {
     data['timeIn'] = _timeIn;
     data['timeOut'] = _timeOut;
     data['customerNameSearch'] = _customerName;
+    data['customerEmail'] = _customerEmail;
     data['modelNameSearch'] = _modelName;
     data['typeOfService'] = _typeOfService.toList();
     for (int i = 1; i <= 15; i++) {
@@ -590,6 +592,7 @@ class ReportScreen2State extends State<ReportScreen2> {
         case 'timeIn': _timeIn = entry.value as String?;
         case 'timeOut': _timeOut = entry.value as String?;
         case 'customerNameSearch': _customerName = entry.value as String?;
+        case 'customerEmail': _customerEmail = entry.value as String?;
         case 'modelNameSearch': _modelName = entry.value as String?;
         case 'typeOfService':
           if (entry.value is List) {
@@ -686,7 +689,7 @@ class ReportScreen2State extends State<ReportScreen2> {
         return;
       }
 
-      final emails = await showEmailDialog(context);
+      final emails = await showEmailDialog(context, initialEmail: _customerEmail);
       if (emails == null || emails.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -814,7 +817,7 @@ class ReportScreen2State extends State<ReportScreen2> {
     if (_customerName == null || _customerName!.isEmpty) missing.add('Customer Name');
     if (_modelName == null || _modelName!.isEmpty) missing.add('Model Name');
     if (_serialNoController.text.trim().isEmpty) missing.add('Serial No');
-    if (_customerTelController.text.trim().isEmpty) missing.add('Contact');
+    if (_customerContactController.text.trim().isEmpty) missing.add('Contact');
     if (_detailOfServiceController.text.trim().isEmpty) missing.add('Detail of Service');
     if (_typeOfService.isEmpty) missing.add('Type of Service');
     if (_customerSignNameController.text.trim().isEmpty) missing.add('Customer Sign Name');
@@ -1478,8 +1481,10 @@ class ReportScreen2State extends State<ReportScreen2> {
                 if (v == null) return;
                 setState(() {
                   _customerName = v['name'] as String?;
-                  final tel = v['tel'] ?? v['phone'] ?? v['customer_tel'];
-                  if (tel is String) _customerTelController.text = tel;
+                  final contact = v['contact_name'];
+                  _customerContactController.text = contact is String ? contact : '';
+                  final email = v['email'];
+                  _customerEmail = email is String ? email : null;
                 });
               }))),
           Positioned(left: cs[29], top: rs[9], width: cs[33] - cs[29], height: rs[10] - rs[9], child: Container(
@@ -1490,7 +1495,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[33], top: rs[9], width: cs[45] - cs[33], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_customerTelController))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_customerContactController))),
 
           Positioned(left: cs[0], top: rs[10], width: cs[1] - cs[0], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
@@ -1646,6 +1651,12 @@ class ReportScreen2State extends State<ReportScreen2> {
 
 
 
+          // Diagonal corner cell so pic1's top-left corner pixel is painted
+          // (Border insets 1px inward; without this cell, the (cs[0]→cs[1])×(rs[14]→rs[15])
+          // pixel is unowned and the box outline shows a 1px gap at the top-left).
+          Positioned(left: cs[0], top: rs[14], width: cs[1] - cs[0], height: rs[15] - rs[14], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[14], width: cs[12] - cs[1], height: rs[15] - rs[14], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: DefaultTextStyle.merge(
@@ -1788,6 +1799,10 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
 
 
+          // Diagonal corner cell so pic4's top-left corner pixel is painted (see cs[0]/rs[14] cell above).
+          Positioned(left: cs[0], top: rs[23], width: cs[1] - cs[0], height: rs[24] - rs[23], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[23], width: cs[20] - cs[1], height: rs[24] - rs[23], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: DefaultTextStyle.merge(
@@ -3253,8 +3268,10 @@ class ReportScreen2State extends State<ReportScreen2> {
                 if (v == null) return;
                 setState(() {
                   _customerName = v['name'] as String?;
-                  final tel = v['tel'] ?? v['phone'] ?? v['customer_tel'];
-                  if (tel is String) _customerTelController.text = tel;
+                  final contact = v['contact_name'];
+                  _customerContactController.text = contact is String ? contact : '';
+                  final email = v['email'];
+                  _customerEmail = email is String ? email : null;
                 });
               }))),
           Positioned(left: cs[29], top: rs[9], width: cs[33] - cs[29], height: rs[10] - rs[9], child: Container(
@@ -3265,7 +3282,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[33], top: rs[9], width: cs[45] - cs[33], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_customerTelController))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_customerContactController))),
 
           Positioned(left: cs[0], top: rs[10], width: cs[1] - cs[0], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),

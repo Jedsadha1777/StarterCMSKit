@@ -14,10 +14,10 @@ from config import IMPORT_DIR
 import os
 
 RESOURCE_TYPE = 'customers'
-EXPORT_COLUMNS = ['customer_id', 'name', 'address', 'tel', 'fax', 'created_by_name', 'created_at', 'updated_at']
-IMPORT_COLUMNS = ['customer_id', 'name', 'address', 'tel', 'fax']
+EXPORT_COLUMNS = ['customer_id', 'name', 'contact_name', 'email', 'address', 'tel', 'fax', 'created_by_name', 'created_at', 'updated_at']
+IMPORT_COLUMNS = ['customer_id', 'name', 'contact_name', 'email', 'address', 'tel', 'fax']
 REQUIRED_COLUMNS = ['customer_id', 'name']
-COMPARE_FIELDS = ['customer_id', 'name', 'address', 'tel', 'fax']
+COMPARE_FIELDS = ['customer_id', 'name', 'contact_name', 'email', 'address', 'tel', 'fax']
 
 
 # ── CRUD ──
@@ -64,6 +64,8 @@ def create_customer(admin):
     customer = Customer(
         customer_id=data['customer_id'],
         name=data['name'],
+        contact_name=data.get('contact_name', ''),
+        email=data.get('email', ''),
         address=data.get('address', ''),
         tel=data.get('tel', ''),
         fax=data.get('fax', ''),
@@ -109,6 +111,12 @@ def update_customer(admin, customer_public_id):
     if data.get('name'):
         customer.name = data['name']
 
+    if 'contact_name' in data:
+        customer.contact_name = data['contact_name']
+
+    if 'email' in data:
+        customer.email = data['email']
+
     if 'address' in data:
         customer.address = data['address']
 
@@ -117,6 +125,7 @@ def update_customer(admin, customer_public_id):
 
     if 'fax' in data:
         customer.fax = data['fax']
+
 
     db.session.commit()
 
@@ -153,7 +162,7 @@ def export_customers(admin):
 
     def row_mapper(c):
         return [
-            c.customer_id, c.name, c.address or '', c.tel or '', c.fax or '',
+            c.customer_id, c.name, c.contact_name or '', c.email or '', c.address or '', c.tel or '', c.fax or '',
             c.creator.name if c.creator else '',
             c.created_at.isoformat() if c.created_at else '',
             c.updated_at.isoformat() if c.updated_at else '',
@@ -195,6 +204,8 @@ def import_preview(admin):
             'row': data['_row'],
             'customer_id': data.get('customer_id', ''),
             'name': data.get('name', ''),
+            'contact_name': data.get('contact_name', ''),
+            'email': data.get('email', ''),
             'address': data.get('address', ''),
             'tel': data.get('tel', ''),
             'fax': data.get('fax', ''),
@@ -204,6 +215,8 @@ def import_preview(admin):
         if status == 'replace' and ex:
             row_result['existing'] = {
                 'name': ex.name,
+                'contact_name': ex.contact_name or '',
+                'email': ex.email or '',
                 'address': ex.address or '',
                 'tel': ex.tel or '',
                 'fax': ex.fax or '',
@@ -245,6 +258,8 @@ def import_confirm(admin):
         ex = existing_map.get(row['customer_id'])
         if ex:
             ex.name = row['name']
+            ex.contact_name = row.get('contact_name', '')
+            ex.email = row.get('email', '')
             ex.address = row.get('address', '')
             ex.tel = row.get('tel', '')
             ex.fax = row.get('fax', '')
@@ -252,6 +267,8 @@ def import_confirm(admin):
         else:
             db.session.add(Customer(
                 customer_id=row['customer_id'], name=row['name'],
+                contact_name=row.get('contact_name', ''),
+                email=row.get('email', ''),
                 address=row.get('address', ''), tel=row.get('tel', ''), fax=row.get('fax', ''),
                 company_id=g.active_company.id, created_by=admin.id,
             ))

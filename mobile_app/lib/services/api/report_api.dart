@@ -42,25 +42,24 @@ class ReportApi {
       );
     }
 
-    final token = await _tokenManager.getAccessToken();
     final uri = Uri.parse('${ApiConfig.baseUrl}/reports');
-    final request = http.MultipartRequest('POST', uri);
-    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+    final response = await _sendMultipart(
+      uri,
+      timeout: const Duration(seconds: 60),
+      build: (req) async {
+        req.fields['form_data'] = jsonEncode(formData);
+        req.fields['recipient_emails'] = jsonEncode(recipientEmails);
+        req.fields['machine_model_id'] = machineModelId;
+        if (customerId != null) req.fields['customer_id'] = customerId;
+        if (serialNo != null) req.fields['serial_no'] = serialNo;
+        if (inspectorName != null) req.fields['inspector_name'] = inspectorName;
+        if (inspectedAt != null) req.fields['inspected_at'] = inspectedAt;
 
-    request.fields['form_data'] = jsonEncode(formData);
-    request.fields['recipient_emails'] = jsonEncode(recipientEmails);
-    request.fields['machine_model_id'] = machineModelId;
-    if (customerId != null) request.fields['customer_id'] = customerId;
-    if (serialNo != null) request.fields['serial_no'] = serialNo;
-    if (inspectorName != null) request.fields['inspector_name'] = inspectorName;
-    if (inspectedAt != null) request.fields['inspected_at'] = inspectedAt;
-
-    for (final e in imageAttachments.entries) {
-      request.files.add(await http.MultipartFile.fromPath(e.key, e.value));
-    }
-
-    final streamedResponse = await request.send().timeout(const Duration(seconds: 60));
-    final response = await http.Response.fromStream(streamedResponse);
+        for (final e in imageAttachments.entries) {
+          req.files.add(await http.MultipartFile.fromPath(e.key, e.value));
+        }
+      },
+    );
 
     if (response.statusCode == 200 || response.statusCode == 201) {
       return _api.safeJsonDecode(response.body);
@@ -72,14 +71,14 @@ class ReportApi {
   }
 
   Future<Map<String, dynamic>> uploadPdf(String reportPublicId, Uint8List pdfBytes) async {
-    final token = await _tokenManager.getAccessToken();
     final uri = Uri.parse('${ApiConfig.baseUrl}/reports/$reportPublicId/upload-pdf');
-    final request = http.MultipartRequest('POST', uri);
-    if (token != null) request.headers['Authorization'] = 'Bearer $token';
-    request.files.add(http.MultipartFile.fromBytes('file', pdfBytes, filename: '$reportPublicId.pdf'));
-
-    final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
-    final response = await http.Response.fromStream(streamedResponse);
+    final response = await _sendMultipart(
+      uri,
+      timeout: const Duration(seconds: 30),
+      build: (req) async {
+        req.files.add(http.MultipartFile.fromBytes('file', pdfBytes, filename: '$reportPublicId.pdf'));
+      },
+    );
 
     if (response.statusCode == 200) {
       return _api.safeJsonDecode(response.body);
@@ -87,6 +86,32 @@ class ReportApi {
       final msg = _api.safeJsonDecode(response.body)['message'] ?? 'Upload failed';
       throw Exception(msg);
     }
+  }
+
+  /// Multipart POST with the same token-refresh-on-401 retry as ApiClient.makeRequest.
+  /// `build` populates fields/files; it's invoked again on retry because
+  /// MultipartRequest/MultipartFile streams are single-use.
+  Future<http.Response> _sendMultipart(
+    Uri uri, {
+    required Future<void> Function(http.MultipartRequest req) build,
+    required Duration timeout,
+  }) async {
+    Future<http.Response> attempt() async {
+      final token = await _tokenManager.getAccessToken();
+      final req = http.MultipartRequest('POST', uri);
+      if (token != null) req.headers['Authorization'] = 'Bearer $token';
+      await build(req);
+      final streamed = await req.send().timeout(timeout);
+      return http.Response.fromStream(streamed);
+    }
+
+    await _tokenManager.getOrRefreshToken(_api.refreshToken);
+    var response = await attempt();
+    if (response.statusCode == 401) {
+      await _api.refreshToken();
+      response = await attempt();
+    }
+    return response;
   }
 
   Future<Map<String, dynamic>> getReportHistory({int page = 1, int perPage = 20}) async {

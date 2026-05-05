@@ -9,7 +9,9 @@ class Customer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     public_id = db.Column(db.String(36), unique=True, nullable=False, default=lambda: str(uuid4()))
     customer_id = db.Column(db.String(50), nullable=False)
-    name = db.Column(db.String(200), nullable=False)
+    name = db.Column(db.String(200), nullable=False)            # company name
+    contact_name = db.Column(db.String(200), nullable=True)     # contact person
+    email = db.Column(db.String(255), nullable=True)
     address = db.Column(db.Text, nullable=True)
     tel = db.Column(db.String(50), nullable=True)
     fax = db.Column(db.String(50), nullable=True)
@@ -25,6 +27,8 @@ class Customer(db.Model):
             'id': self.public_id,
             'customer_id': self.customer_id,
             'name': self.name,
+            'contact_name': self.contact_name,
+            'email': self.email,
             'address': self.address,
             'tel': self.tel,
             'fax': self.fax,

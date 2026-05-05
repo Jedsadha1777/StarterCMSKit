@@ -31,7 +31,9 @@
               </th>
               <th class="text-caption font-weight-bold" style="width:100px">Status</th>
               <th class="text-caption font-weight-bold">Customer ID</th>
-              <th class="text-caption font-weight-bold">Name</th>
+              <th class="text-caption font-weight-bold">Company Name</th>
+              <th class="text-caption font-weight-bold">Contact Person</th>
+              <th class="text-caption font-weight-bold">Email</th>
               <th class="text-caption font-weight-bold">Address</th>
               <th class="text-caption font-weight-bold">Tel</th>
               <th class="text-caption font-weight-bold">Fax</th>
@@ -56,6 +58,20 @@
                   <div class="text-caption text-grey text-decoration-line-through">{{ row.existing.name }}</div>
                 </template>
                 <template v-else>{{ row.name }}</template>
+              </td>
+              <td>
+                <template v-if="row.status === 'replace' && row.existing">
+                  {{ row.contact_name }}
+                  <div class="text-caption text-grey text-decoration-line-through">{{ row.existing.contact_name }}</div>
+                </template>
+                <template v-else>{{ row.contact_name }}</template>
+              </td>
+              <td>
+                <template v-if="row.status === 'replace' && row.existing">
+                  {{ row.email }}
+                  <div class="text-caption text-grey text-decoration-line-through">{{ row.existing.email }}</div>
+                </template>
+                <template v-else>{{ row.email }}</template>
               </td>
               <td>
                 <template v-if="row.status === 'replace' && row.existing">

@@ -562,9 +562,11 @@ class _PreviewShellState extends State<PreviewShell> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
+    // No nested MaterialApp — it would create its own ScaffoldMessenger scope,
+    // hiding any SnackBar / dialog that descendant pages dispatch via
+    // ScaffoldMessenger.of(context) using their State.context (which sits
+    // ABOVE this widget). Outer feedback ends up behind the inner UI = silent.
+    return Scaffold(
         key: _scaffoldKey,
         backgroundColor: const Color(0xFFE0E0E0),
         bottomNavigationBar: _buildFooter(),
@@ -754,8 +756,7 @@ class _PreviewShellState extends State<PreviewShell> {
             ),
           ),
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -889,6 +890,6 @@ class _ScaledContentState extends State<_ScaledContent> {
           ),
         ),
       ),
-    );
+  );
   }
 }

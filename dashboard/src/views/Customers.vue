@@ -70,7 +70,9 @@ export default {
 
     const columns = [
       { key: 'customer_id', label: 'Customer ID', sortable: true, width: '160px' },
-      { key: 'name', label: 'Name', sortable: true, link: true },
+      { key: 'name', label: 'Company Name', sortable: true, link: true },
+      { key: 'contact_name', label: 'Contact Person', width: '160px' },
+      { key: 'email', label: 'Email', width: '180px' },
       { key: 'address', label: 'Address' },
       { key: 'tel', label: 'Tel', width: '140px' },
       { key: 'fax', label: 'Fax', width: '140px' },
@@ -131,6 +133,8 @@ export default {
         const rows = selectedRows.map(r => ({
           customer_id: r.customer_id,
           name: r.name,
+          contact_name: r.contact_name,
+          email: r.email,
           address: r.address,
           tel: r.tel,
           fax: r.fax,

@@ -27,7 +27,7 @@ class LocalDb {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE articles (
@@ -55,6 +55,7 @@ class LocalDb {
         await _upgradeToV3(db); // safe — check column exists ก่อน ADD
         await _upgradeToV4(db);
         await _upgradeToV5(db);
+        await _upgradeToV6(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -68,6 +69,9 @@ class LocalDb {
         }
         if (oldVersion < 5) {
           await _upgradeToV5(db);
+        }
+        if (oldVersion < 6) {
+          await _upgradeToV6(db);
         }
       },
     );
@@ -246,6 +250,17 @@ class LocalDb {
     ''');
   }
 
+  static Future<void> _upgradeToV6(Database db) async {
+    final columns = await db.rawQuery('PRAGMA table_info(cached_customers)');
+    final columnNames = columns.map((c) => c['name'] as String).toSet();
+    if (!columnNames.contains('contact_name')) {
+      await db.execute('ALTER TABLE cached_customers ADD COLUMN contact_name TEXT');
+    }
+    if (!columnNames.contains('email')) {
+      await db.execute('ALTER TABLE cached_customers ADD COLUMN email TEXT');
+    }
+  }
+
   // ==================== Machine Models Cache ====================
 
   Future<void> replaceAllMachineModels(List<Map<String, dynamic>> models) async {
@@ -294,6 +309,8 @@ class LocalDb {
           'id': c['id'],
           'customer_id': c['customer_id'],
           'name': c['name'],
+          'contact_name': c['contact_name'] ?? '',
+          'email': c['email'] ?? '',
           'address': c['address'] ?? '',
           'tel': c['tel'] ?? '',
           'fax': c['fax'] ?? '',

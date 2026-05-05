@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 
-Future<List<String>?> showEmailDialog(BuildContext context) async {
+Future<List<String>?> showEmailDialog(BuildContext context, {String? initialEmail}) async {
   return showDialog<List<String>>(
     context: context,
-    builder: (ctx) => const _EmailDialog(),
+    builder: (ctx) => _EmailDialog(initialEmail: initialEmail),
   );
 }
 
 class _EmailDialog extends StatefulWidget {
-  const _EmailDialog();
+  final String? initialEmail;
+  const _EmailDialog({this.initialEmail});
 
   @override
   State<_EmailDialog> createState() => _EmailDialogState();
@@ -23,6 +24,10 @@ class _EmailDialogState extends State<_EmailDialog> {
     super.initState();
     for (int i = 0; i < 5; i++) {
       _controllers.add(TextEditingController());
+    }
+    final pre = widget.initialEmail?.trim();
+    if (pre != null && pre.isNotEmpty) {
+      _controllers[0].text = pre;
     }
   }
 

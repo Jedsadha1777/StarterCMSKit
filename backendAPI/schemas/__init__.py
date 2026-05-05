@@ -150,6 +150,8 @@ class CustomerCreateSchema(Schema):
         unknown = EXCLUDE
     customer_id = fields.String(required=True, validate=[validate.Length(min=1), alphanumeric])
     name = fields.String(required=True, validate=validate.Length(min=1))
+    contact_name = fields.String(load_default='')
+    email = fields.String(load_default='')
     address = fields.String(load_default='')
     tel = fields.String(load_default='')
     fax = fields.String(load_default='')
@@ -160,6 +162,8 @@ class CustomerUpdateSchema(Schema):
         unknown = EXCLUDE
     customer_id = fields.String(validate=[validate.Length(min=1), alphanumeric])
     name = fields.String(validate=validate.Length(min=1))
+    contact_name = fields.String(allow_none=True)
+    email = fields.String(allow_none=True)
     address = fields.String(allow_none=True)
     tel = fields.String(allow_none=True)
     fax = fields.String(allow_none=True)
@@ -169,6 +173,8 @@ class CustomerResponseSchema(Schema):
     id = fields.Method('get_id')
     customer_id = fields.String()
     name = fields.String()
+    contact_name = fields.String()
+    email = fields.String()
     address = fields.String()
     tel = fields.String()
     fax = fields.String()

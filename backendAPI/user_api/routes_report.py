@@ -1,4 +1,5 @@
 import os
+import json
 import smtplib
 from datetime import datetime, timezone
 from flask import jsonify, request, send_file
@@ -23,7 +24,21 @@ REPORTS_DIR = os.path.join(UPLOAD_DIR, 'reports')
 @jwt_required()
 @user_required
 def submit_report(user):
-    data, err = load_schema(ReportCreateSchema)
+    # Mobile sends multipart/form-data when image attachments are present;
+    # otherwise plain JSON. load_schema's default get_json() returns None for
+    # multipart → "No data provided". Detect and route accordingly.
+    ctype = (request.content_type or '').lower()
+    if ctype.startswith('multipart/'):
+        raw = request.form.to_dict()
+        for k in ('form_data', 'recipient_emails'):
+            if k in raw and isinstance(raw[k], str):
+                try:
+                    raw[k] = json.loads(raw[k])
+                except (ValueError, TypeError):
+                    pass
+        data, err = load_schema(ReportCreateSchema, data=raw)
+    else:
+        data, err = load_schema(ReportCreateSchema)
     if err: return err
 
     current_count = Report.query.filter(Report.company_id == user.company_id).count()
@@ -89,6 +104,15 @@ def submit_report(user):
                 unit_price=p['unit_price'],
                 consumption_dt=consumption_dt,
             ))
+
+    # Save image attachments (multipart) — names match mobile's _imageUploadFiles keys.
+    if request.files:
+        attach_dir = os.path.join(REPORTS_DIR, report.public_id)
+        os.makedirs(attach_dir, exist_ok=True)
+        for key, f in request.files.items():
+            if not f or not f.filename:
+                continue
+            f.save(os.path.join(attach_dir, f.filename))
 
     db.session.commit()
 
