@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/api/report_api.dart';
 import '../services/local_db.dart';
 import '../services/app_settings.dart';
+import 'report_pdf_view_screen.dart';
 
 class ReportHistoryScreen extends StatefulWidget {
   const ReportHistoryScreen({super.key});
@@ -13,6 +14,7 @@ class ReportHistoryScreen extends StatefulWidget {
 
 class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
   final ReportApi _reportApi = ReportApi();
+  final TextEditingController _searchCtrl = TextEditingController();
   List<Map<String, dynamic>> _reports = [];
   bool _loading = true;
   String? _error;
@@ -21,6 +23,28 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    _searchCtrl.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  // Same matching style as FormSearch / ModelSelectionScreen.
+  List<Map<String, dynamic>> _filtered() {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return _reports;
+    return _reports.where((r) {
+      bool match(String key) =>
+          (r[key] as String? ?? '').toLowerCase().contains(q);
+      return match('report_no') ||
+          match('serial_no') ||
+          match('inspector_name') ||
+          match('user_name') ||
+          match('status');
+    }).toList();
   }
 
   Future<void> _loadHistory() async {
@@ -102,6 +126,15 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
     }
   }
 
+  void _openPdfView(String reportId, String reportNo) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReportPdfViewScreen(reportId: reportId, reportNo: reportNo),
+      ),
+    );
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'sent': return Colors.green;
@@ -130,33 +163,77 @@ class _ReportHistoryScreenState extends State<ReportHistoryScreen> {
               ? Center(child: Text(_error!, style: const TextStyle(color: Colors.red)))
               : _reports.isEmpty
                   ? const Center(child: Text('No reports submitted yet.', style: TextStyle(fontSize: 16, color: Colors.grey)))
-                  : ListView.separated(
-                      padding: const EdgeInsets.all(16),
-                      itemCount: _reports.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final report = _reports[index];
-                        final status = report['status'] as String? ?? '';
-                        return ListTile(
-                          leading: Icon(Icons.description, color: _statusColor(status)),
-                          title: Text(report['report_no'] ?? ''),
-                          subtitle: Text('${AppSettings().formatDateTime(report['created_at'] as String?)}\nStatus: $status'),
-                          isThreeLine: true,
-                          trailing: status == 'email_failed'
-                              ? TextButton.icon(
-                                  icon: const Icon(Icons.send, size: 16),
-                                  label: const Text('Retry Email'),
-                                  onPressed: () => _retryEmail(report['id'] as String, index),
-                                )
-                              : status == 'pending_pdf'
-                              ? TextButton.icon(
-                                  icon: const Icon(Icons.upload, size: 16),
-                                  label: const Text('Retry Upload'),
-                                  onPressed: () => _retryUpload(report['id'] as String, index),
-                                )
-                              : null,
-                        );
-                      },
+                  : Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                          child: TextField(
+                            controller: _searchCtrl,
+                            decoration: InputDecoration(
+                              hintText: 'Search report no, serial, inspector, status',
+                              prefixIcon: const Icon(Icons.search, size: 20),
+                              suffixIcon: _searchCtrl.text.isEmpty
+                                  ? null
+                                  : IconButton(
+                                      icon: const Icon(Icons.close, size: 20),
+                                      onPressed: () => _searchCtrl.clear(),
+                                    ),
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Builder(
+                            builder: (_) {
+                              final filtered = _filtered();
+                              if (filtered.isEmpty) {
+                                return const Center(
+                                  child: Text(
+                                    'No reports match.',
+                                    style: TextStyle(fontSize: 14, color: Colors.grey),
+                                  ),
+                                );
+                              }
+                              return ListView.separated(
+                                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                                itemCount: filtered.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final report = filtered[index];
+                                  // Resolve back to original index so retry handlers update the right row.
+                                  final origIndex = _reports.indexOf(report);
+                                  final status = report['status'] as String? ?? '';
+                                  final hasPdf = status != 'pending_pdf';
+                                  return ListTile(
+                                    leading: Icon(Icons.description, color: _statusColor(status)),
+                                    title: Text(report['report_no'] ?? ''),
+                                    subtitle: Text('${AppSettings().formatDateTime(report['created_at'] as String?)}\nStatus: $status'),
+                                    isThreeLine: true,
+                                    onTap: hasPdf
+                                        ? () => _openPdfView(report['id'] as String, report['report_no'] as String? ?? '')
+                                        : null,
+                                    trailing: status == 'email_failed'
+                                        ? TextButton.icon(
+                                            icon: const Icon(Icons.send, size: 16),
+                                            label: const Text('Retry Email'),
+                                            onPressed: () => _retryEmail(report['id'] as String, origIndex),
+                                          )
+                                        : status == 'pending_pdf'
+                                        ? TextButton.icon(
+                                            icon: const Icon(Icons.upload, size: 16),
+                                            label: const Text('Retry Upload'),
+                                            onPressed: () => _retryUpload(report['id'] as String, origIndex),
+                                          )
+                                        : const Icon(Icons.chevron_right, color: Colors.grey),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
                     ),
     );
   }

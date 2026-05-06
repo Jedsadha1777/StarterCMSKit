@@ -27,17 +27,6 @@
             <v-icon start size="small">mdi-file-pdf-box</v-icon>View PDF
           </v-btn>
           <v-chip v-else-if="item.status === 'pending_pdf'" size="small" color="orange" variant="tonal" class="mr-2">PDF Pending</v-chip>
-          <v-select
-            v-if="nextStatuses(item.status).length"
-            :items="nextStatuses(item.status)"
-            :model-value="null"
-            placeholder="Change status"
-            variant="outlined"
-            density="compact"
-            hide-details
-            style="max-width:150px; display:inline-flex"
-            @update:model-value="(val) => changeStatus(item, val)"
-          />
         </template>
       </DataTable>
     </template>
@@ -56,15 +45,9 @@ export default {
   setup() {
     const search = ref('')
     const statusFilter = ref(null)
-    const statusOptions = ['submitted', 'sent', 'email_failed', 'pending_pdf', 'reviewed', 'approved', 'rejected']
-
-    const validTransitions = {
-      submitted: ['reviewed'],
-      sent: ['reviewed'],
-      email_failed: ['reviewed'],
-      pending_pdf: ['reviewed'],
-      reviewed: ['approved', 'rejected'],
-    }
+    // Only the statuses the backend actually sets (pending_pdf on submit,
+    // sent / email_failed after PDF upload). Review/approve workflow removed.
+    const statusOptions = ['pending_pdf', 'sent', 'email_failed']
 
     const columns = [
       { key: 'report_no', label: 'Report No', sortable: true, width: '160px' },
@@ -91,18 +74,8 @@ export default {
     }
 
     const statusColor = (status) => {
-      const map = { sent: 'success', email_failed: 'error', submitted: 'warning', pending_pdf: 'grey', reviewed: 'info', approved: 'teal', rejected: 'grey-darken-1' }
+      const map = { sent: 'success', email_failed: 'error', pending_pdf: 'grey' }
       return map[status] || 'default'
-    }
-
-    const nextStatuses = (status) => validTransitions[status] || []
-
-    const changeStatus = async (item, newStatus) => {
-      if (!newStatus) return
-      try {
-        await api.updateReportStatus(item.id, { status: newStatus })
-        item.status = newStatus
-      } catch (e) { alert(e.response?.data?.message || 'Failed to update status') }
     }
 
     const viewPdf = async (id) => {
@@ -115,7 +88,7 @@ export default {
 
     onMounted(load)
 
-    return { search, statusFilter, statusOptions, columns, ...dt, load, statusColor, nextStatuses, changeStatus, viewPdf }
+    return { search, statusFilter, statusOptions, columns, ...dt, load, statusColor, viewPdf }
   }
 }
 </script>

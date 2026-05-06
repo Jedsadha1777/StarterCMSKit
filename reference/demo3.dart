@@ -1,39 +1,31 @@
-// Layout sourced from reference/lib3/demo3.dart (SERVICE REPORT — parts 1-15,
-// visit/finish dates, time-in/out, customer + model searches, type of service,
-// 6 image attachments, dual signatures). Wiring (draft save/load, API submit,
-// PDF screenshot capture, validation, route args, image-upload disk handling)
-// preserved from the previous report_screen2.dart.
+// ─────────────────────────────────────────────────────────────────────────
+// FORM SUFFIX: "1"
+//   Classes in this file: FormWidget1, FormWidgetState1
+//
+// หากต้องการ integrate หลายฟอร์มในโปรเจ็กต์เดียวกัน — rename ใน IDE:
+//   FormWidget1  →  FormWidget2 (หรือชื่ออื่น)
+//   FormWidgetState1  →  FormWidgetState2
+// VS Code: F2 บน class name | JetBrains: Shift+F6
+// ─────────────────────────────────────────────────────────────────────────
 
-import 'dart:io';
-import 'dart:math' as math;
-import 'dart:convert';
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
-import 'package:uuid/uuid.dart';
+import 'dart:math' as math;
+import 'dart:typed_data';
 import 'form_widgets/form_widgets.dart';
 import 'preview_shell.dart';
-import '../services/local_db.dart';
-import '../services/api/report_api.dart';
-import '../services/connectivity_service.dart';
-import 'email_dialog.dart';
-import 'send_result_screen.dart';
 
-class ReportScreen2 extends StatefulWidget {
-  const ReportScreen2({super.key});
+void main() => runApp(const FormWidget1());
+
+class FormWidget1 extends StatefulWidget {
+  const FormWidget1({super.key});
   @override
-  State<ReportScreen2> createState() => ReportScreen2State();
+  State<FormWidget1> createState() => FormWidgetState1();
 }
 
-class ReportScreen2State extends State<ReportScreen2> {
+class FormWidgetState1 extends State<FormWidget1> {
 
   // ============ CONTROLLERS ============
-  final _customerContactController = TextEditingController();
+  final _customerTelController = TextEditingController();
   final _serialNoController = TextEditingController();
   final _detailOfServiceController = TextEditingController();
   final _conditionController = TextEditingController();
@@ -88,14 +80,13 @@ class ReportScreen2State extends State<ReportScreen2> {
   final _partNo17Controller = TextEditingController();
   final _partCode17Controller = TextEditingController();
   final _partQty17Controller = TextEditingController();
-  final _partNo18Controller = TextEditingController();
   final _partCode18Controller = TextEditingController();
   final _partQty18Controller = TextEditingController();
   final _customerSignNameController = TextEditingController();
   final _staffSignNameController = TextEditingController();
 
   Map<String, TextEditingController> get _controllerMap => {
-    'customerContact': _customerContactController,
+    'customerTel': _customerTelController,
     'serialNo': _serialNoController,
     'detailOfService': _detailOfServiceController,
     'condition': _conditionController,
@@ -150,7 +141,6 @@ class ReportScreen2State extends State<ReportScreen2> {
     'partNo17': _partNo17Controller,
     'partCode17': _partCode17Controller,
     'partQty17': _partQty17Controller,
-    'partNo18': _partNo18Controller,
     'partCode18': _partCode18Controller,
     'partQty18': _partQty18Controller,
     'customerSignName': _customerSignNameController,
@@ -167,28 +157,12 @@ class ReportScreen2State extends State<ReportScreen2> {
   // ============ STATE VARIABLES ============
   bool _snapMode = false;
   final GlobalKey _captureKey = GlobalKey();
-  final GlobalKey _captureKey2 = GlobalKey();
 
-  // Draft / submit state
-  String? _draftId;
-  String? _reportNo;     // backend-issued report number — rendered into form before PDF capture
-  bool _isSaving = false;
-  bool _isSending = false;
-  bool _argsLoaded = false;
-  bool _showValidation = false;
-  Map<String, dynamic>? _machineModel;
-  Map<String, dynamic>? _draftData;
-
-  // Map<fieldName, absolute-path> (file lives under app-docs/uploads/)
-  final Map<String, String> _imageUploadFiles = {};
-
-  // Form-specific (driven by FormDate / FormTime / FormSearch / FormSignature)
   String? _visitDate;
   String? _finishDate;
   String? _timeIn;
   String? _timeOut;
   String? _customerName;
-  String? _customerEmail;     // captured on customer pick — pre-fills email dialog
   String? _modelName;
   String? _partName1;
   String? _partName2;
@@ -210,578 +184,17 @@ class ReportScreen2State extends State<ReportScreen2> {
   String? _partName18;
   Uint8List? _customerSignBytes;
   Uint8List? _staffSignBytes;
-  Set<String> _typeOfService = {};
+  bool _typeOfService = false;
 
   InputDecoration get _inputDecoration => _snapMode
       ? const InputDecoration(border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 0))
       : const InputDecoration(border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0));
 
-  // Read-only TextField — no border in non-snap, plain text in snap.
-  Widget _readOnlyTextField(TextEditingController ctrl, {double fontSize = 14.6, TextAlign textAlign = TextAlign.start}) {
-    final style = TextStyle(fontFamily: 'Calibri', fontSize: fontSize);
-    return TextField(
-      controller: ctrl,
-      readOnly: true,
-      textAlign: textAlign,
-      style: style,
-      decoration: const InputDecoration(
-        border: InputBorder.none,
-        isDense: true,
-        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-      ),
-    );
-  }
-
-  // When user picks a part from FormSearch — fill code, refresh row #.
-  void _onPartPicked(Map<String, dynamic>? v, {
-    required void Function(String?) setName,
-    required TextEditingController codeCtrl,
-  }) {
-    if (v == null) return;
-    setState(() {
-      setName(v['parts_name'] as String?);
-      codeCtrl.text = v['parts_code'] as String? ?? '';
-      _renumberParts();
-    });
-  }
-
-  // Required raw TextField — yellow when empty + showValidation = true
-  Widget _requiredTextField(TextEditingController ctrl, {TextInputType? keyboardType, bool expands = false, double fontSize = 14.6}) {
-    final style = TextStyle(fontFamily: 'Calibri', fontSize: fontSize);
-    if (_snapMode) {
-      return TextField(
-        controller: ctrl,
-        readOnly: true,
-        keyboardType: keyboardType,
-        maxLines: expands ? null : 1,
-        minLines: expands ? null : null,
-        expands: expands,
-        textAlignVertical: expands ? TextAlignVertical.top : null,
-        style: style,
-        decoration: _inputDecoration,
-      );
-    }
-    return ValueListenableBuilder<TextEditingValue>(
-      valueListenable: ctrl,
-      builder: (_, val, __) {
-        final highlight = val.text.trim().isEmpty && _showValidation;
-        return TextField(
-          controller: ctrl,
-          keyboardType: keyboardType,
-          maxLines: expands ? null : 1,
-          minLines: expands ? null : null,
-          expands: expands,
-          textAlignVertical: expands ? TextAlignVertical.top : null,
-          style: style,
-          decoration: InputDecoration(
-            border: const OutlineInputBorder(),
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-            filled: highlight,
-            fillColor: highlight ? const Color.fromARGB(136, 255, 235, 59) : null,
-          ),
-        );
-      },
-    );
-  }
-
-  // ============ LIFECYCLE ============
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_argsLoaded) return;
-    _argsLoaded = true;
-    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-    _machineModel = args?['machineModel'] as Map<String, dynamic>?;
-    _modelName = _machineModel?['model_name'] as String?;
-    _draftData = args?['draftData'] as Map<String, dynamic>?;
-    if (_draftData != null) {
-      _draftId = _draftData!['draft_id'] as String?;
-      _reportNo = _draftData!['report_no'] as String?;
-      final formData = _draftData!['form_data'];
-      if (formData is Map<String, dynamic>) {
-        _restoreData(formData).then((_) { if (mounted) setState(() {}); });
-      }
-    } else {
-      _draftId = const Uuid().v4();
-    }
-  }
-
-  void onReset() {
-    setState(() {
-      for (final c in _controllerMap.values) { c.clear(); }
-      _visitDate = null;
-      _finishDate = null;
-      _timeIn = null;
-      _timeOut = null;
-      _customerName = null;
-      _modelName = null;
-      _partName1 = null; _partName2 = null; _partName3 = null;
-      _partName4 = null; _partName5 = null; _partName6 = null;
-      _partName7 = null; _partName8 = null; _partName9 = null;
-      _partName10 = null; _partName11 = null; _partName12 = null;
-      _partName13 = null; _partName14 = null; _partName15 = null;
-      _partName16 = null; _partName17 = null; _partName18 = null;
-      _customerSignBytes = null;
-      _staffSignBytes = null;
-      _typeOfService = {};
-      _imageUploadFiles.clear();
-      _showValidation = false;
-      _draftId = const Uuid().v4();
-      _reportNo = null;
-    });
-  }
-
-  // ============ IMAGE UPLOAD ============
-  Future<void> _onImagePicked(String name, XFile? xfile) async {
-    if (xfile == null) {
-      if (mounted) setState(() => _imageUploadFiles.remove(name));
-      return;
-    }
-    final dir = await getApplicationDocumentsDirectory();
-    final upDir = Directory('${dir.path}/uploads');
-    if (!await upDir.exists()) await upDir.create(recursive: true);
-    final srcPath = xfile.path;
-    final ext = srcPath.contains('.') ? srcPath.substring(srcPath.lastIndexOf('.')) : '.jpg';
-    final filename = '${_draftId}_$name$ext';
-    final absPath = '${upDir.path}/$filename';
-    await File(srcPath).copy(absPath);
-    if (mounted) setState(() => _imageUploadFiles[name] = absPath);
-  }
-
-  // ============ COLLECT / RESTORE DATA ============
-  Future<Map<String, dynamic>> _collectData() async {
-    final data = <String, dynamic>{};
-    for (final entry in _controllerMap.entries) {
-      data[entry.key] = entry.value.text;
-    }
-    data['visitDate'] = _visitDate;
-    data['finishDate'] = _finishDate;
-    data['timeIn'] = _timeIn;
-    data['timeOut'] = _timeOut;
-    data['customerNameSearch'] = _customerName;
-    data['customerEmail'] = _customerEmail;
-    data['modelNameSearch'] = _modelName;
-    data['typeOfService'] = _typeOfService.toList();
-    for (int i = 1; i <= 18; i++) {
-      data['partName$i'] = _partNameFor(i);
-    }
-    data['signatureCustomer'] = _customerSignBytes != null ? base64Encode(_customerSignBytes!) : null;
-    data['signatureStaff'] = _staffSignBytes != null ? base64Encode(_staffSignBytes!) : null;
-    for (final e in _imageUploadFiles.entries) {
-      final p = e.value;
-      data[e.key] = p.substring(p.lastIndexOf('/') + 1);
-    }
-    return data;
-  }
-
-  String? _partNameFor(int i) => switch (i) {
-    1 => _partName1, 2 => _partName2, 3 => _partName3, 4 => _partName4, 5 => _partName5,
-    6 => _partName6, 7 => _partName7, 8 => _partName8, 9 => _partName9, 10 => _partName10,
-    11 => _partName11, 12 => _partName12, 13 => _partName13, 14 => _partName14, 15 => _partName15,
-    16 => _partName16, 17 => _partName17, 18 => _partName18,
-    _ => null,
-  };
-
-  TextEditingController _partNoCtrlFor(int i) => switch (i) {
-    1 => _partNo1Controller, 2 => _partNo2Controller, 3 => _partNo3Controller,
-    4 => _partNo4Controller, 5 => _partNo5Controller, 6 => _partNo6Controller,
-    7 => _partNo7Controller, 8 => _partNo8Controller, 9 => _partNo9Controller,
-    10 => _partNo10Controller, 11 => _partNo11Controller, 12 => _partNo12Controller,
-    13 => _partNo13Controller, 14 => _partNo14Controller, 15 => _partNo15Controller,
-    16 => _partNo16Controller, 17 => _partNo17Controller, 18 => _partNo18Controller,
-    _ => throw RangeError('part row $i out of range'),
-  };
-
-  TextEditingController _partCodeCtrlFor(int i) => switch (i) {
-    1 => _partCode1Controller, 2 => _partCode2Controller, 3 => _partCode3Controller,
-    4 => _partCode4Controller, 5 => _partCode5Controller, 6 => _partCode6Controller,
-    7 => _partCode7Controller, 8 => _partCode8Controller, 9 => _partCode9Controller,
-    10 => _partCode10Controller, 11 => _partCode11Controller, 12 => _partCode12Controller,
-    13 => _partCode13Controller, 14 => _partCode14Controller, 15 => _partCode15Controller,
-    16 => _partCode16Controller, 17 => _partCode17Controller, 18 => _partCode18Controller,
-    _ => throw RangeError('part row $i out of range'),
-  };
-
-  TextEditingController _partQtyCtrlFor(int i) => switch (i) {
-    1 => _partQty1Controller, 2 => _partQty2Controller, 3 => _partQty3Controller,
-    4 => _partQty4Controller, 5 => _partQty5Controller, 6 => _partQty6Controller,
-    7 => _partQty7Controller, 8 => _partQty8Controller, 9 => _partQty9Controller,
-    10 => _partQty10Controller, 11 => _partQty11Controller, 12 => _partQty12Controller,
-    13 => _partQty13Controller, 14 => _partQty14Controller, 15 => _partQty15Controller,
-    16 => _partQty16Controller, 17 => _partQty17Controller, 18 => _partQty18Controller,
-    _ => throw RangeError('part row $i out of range'),
-  };
-
-  bool _isPartRowEnabled(int i) {
-    if (i == 1) return true;
-    final prev = _partNameFor(i - 1);
-    return prev != null && prev.isNotEmpty;
-  }
-
-  void _setPartNameRaw(int i, String? v) {
-    switch (i) {
-      case 1: _partName1 = v; case 2: _partName2 = v; case 3: _partName3 = v;
-      case 4: _partName4 = v; case 5: _partName5 = v; case 6: _partName6 = v;
-      case 7: _partName7 = v; case 8: _partName8 = v; case 9: _partName9 = v;
-      case 10: _partName10 = v; case 11: _partName11 = v; case 12: _partName12 = v;
-      case 13: _partName13 = v; case 14: _partName14 = v; case 15: _partName15 = v;
-      case 16: _partName16 = v; case 17: _partName17 = v; case 18: _partName18 = v;
-    }
-  }
-
-  // Clear row i and shift rows i+1..18 up. Recalc # afterwards.
-  void _clearPartRow(int i) {
-    final name = _partNameFor(i);
-    if (name == null || name.isEmpty) return;   // already empty, no-op
-    setState(() {
-      for (int k = i; k < 18; k++) {
-        _setPartNameRaw(k, _partNameFor(k + 1));
-        _partCodeCtrlFor(k).text = _partCodeCtrlFor(k + 1).text;
-        _partQtyCtrlFor(k).text = _partQtyCtrlFor(k + 1).text;
-      }
-      // Last row becomes blank.
-      _setPartNameRaw(18, null);
-      _partCodeCtrlFor(18).text = '';
-      _partQtyCtrlFor(18).text = '';
-      _renumberParts();
-    });
-  }
-
-  // Sequential numbering — fills part_no with 1..N for rows that have a part picked.
-  void _renumberParts() {
-    int seq = 0;
-    for (int i = 1; i <= 18; i++) {
-      final name = _partNameFor(i);
-      final ctrl = _partNoCtrlFor(i);
-      if (name != null && name.isNotEmpty) {
-        seq++;
-        ctrl.text = seq.toString();
-      } else {
-        ctrl.text = '';
-      }
-    }
-  }
-
-  void _setPartName(int i, String? v) {
-    setState(() {
-      switch (i) {
-        case 1: _partName1 = v; case 2: _partName2 = v; case 3: _partName3 = v;
-        case 4: _partName4 = v; case 5: _partName5 = v; case 6: _partName6 = v;
-        case 7: _partName7 = v; case 8: _partName8 = v; case 9: _partName9 = v;
-        case 10: _partName10 = v; case 11: _partName11 = v; case 12: _partName12 = v;
-        case 13: _partName13 = v; case 14: _partName14 = v; case 15: _partName15 = v;
-        case 16: _partName16 = v; case 17: _partName17 = v; case 18: _partName18 = v;
-      }
-    });
-  }
-
-  Future<void> _restoreData(Map<String, dynamic> formData) async {
-    for (final entry in formData.entries) {
-      final ctrl = _controllerMap[entry.key];
-      if (ctrl != null && entry.value is String) {
-        ctrl.text = entry.value;
-        continue;
-      }
-      switch (entry.key) {
-        case 'visitDate': _visitDate = entry.value as String?;
-        case 'finishDate': _finishDate = entry.value as String?;
-        case 'timeIn': _timeIn = entry.value as String?;
-        case 'timeOut': _timeOut = entry.value as String?;
-        case 'customerNameSearch': _customerName = entry.value as String?;
-        case 'customerEmail': _customerEmail = entry.value as String?;
-        case 'modelNameSearch': _modelName = entry.value as String?;
-        case 'typeOfService':
-          if (entry.value is List) {
-            _typeOfService = (entry.value as List).whereType<String>().toSet();
-          }
-        case 'signatureCustomer':
-          if (entry.value is String) _customerSignBytes = base64Decode(entry.value);
-        case 'signatureStaff':
-          if (entry.value is String) _staffSignBytes = base64Decode(entry.value);
-        default:
-          // partName1..18
-          if (entry.key.startsWith('partName') && entry.value is String?) {
-            final idx = int.tryParse(entry.key.substring('partName'.length));
-            if (idx != null && idx >= 1 && idx <= 18) {
-              _setPartName(idx, entry.value as String?);
-            }
-          } else if (entry.key.startsWith('pic') && entry.value is String) {
-            final dir = await getApplicationDocumentsDirectory();
-            final absPath = '${dir.path}/uploads/${entry.value}';
-            if (await File(absPath).exists()) {
-              _imageUploadFiles[entry.key] = absPath;
-            }
-          }
-      }
-    }
-  }
-
-  // ============ SAVE / SEND ============
-  Future<void> onSave() async {
-    if (_isSaving) return;
-    setState(() => _isSaving = true);
-    try {
-      await LocalDb().saveDraft(
-        draftId: _draftId!,
-        machineModelId: _machineModel?['id'] ?? '',
-        formData: await _collectData(),
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Draft saved!'), duration: Duration(seconds: 1)),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  Future<Uint8List?> _captureScreenshot(GlobalKey key) async {
-    final boundary = key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-    if (boundary == null) return null;
-    final image = await boundary.toImage(pixelRatio: 2.0);
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-    return byteData?.buffer.asUint8List();
-  }
-
-  Future<Uint8List> _imagesToPdf(List<Uint8List> pngList) async {
-    final pdf = pw.Document();
-    for (final png in pngList) {
-      final image = pw.MemoryImage(png);
-      pdf.addPage(pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        margin: pw.EdgeInsets.zero,
-        build: (ctx) => pw.Center(child: pw.Image(image, fit: pw.BoxFit.contain)),
-      ));
-    }
-    return pdf.save();
-  }
-
-  Future<void> onSend() async {
-    if (_isSending) return;
-    setState(() => _isSending = true);
-    try {
-      final collected = await _collectData();
-      await LocalDb().saveDraft(
-        draftId: _draftId!,
-        machineModelId: _machineModel?['id'] ?? '',
-        formData: collected,
-      );
-
-      if (!ConnectivityService().isOnline) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No internet connection. Please save as draft.')),
-          );
-        }
-        return;
-      }
-
-      final missing = _missingRequired();
-      final missingSigns = _missingSignatures();
-      if (missing.isNotEmpty || missingSigns.isNotEmpty) {
-        if (mounted) setState(() => _showValidation = true);
-        await _showIncompleteDialog(missing, missingSigns);
-        return;
-      }
-
-      final emails = await showEmailDialog(context, initialEmail: _customerEmail);
-      if (emails == null || emails.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Send cancelled (no recipient email).')),
-          );
-        }
-        return;
-      }
-
-      String? reportNo;
-      String? reportId;
-
-      final existingDraft = await LocalDb().loadDraft(_draftId!);
-      final existingReportId = existingDraft?['report_public_id'] as String?;
-      if (existingReportId != null && existingReportId.isNotEmpty) {
-        reportId = existingReportId;
-        reportNo = existingDraft?['report_no'] as String?;
-      }
-
-      if (reportId == null) {
-        final jsonData = Map<String, dynamic>.from(collected);
-        for (final key in _imageUploadFiles.keys) {
-          jsonData.remove(key);
-        }
-        final result = await ReportApi().submitReport(
-          formData: jsonData,
-          recipientEmails: emails,
-          machineModelId: _machineModel?['id'] ?? '',
-          serialNo: _serialNoController.text,
-          inspectorName: _staffSignNameController.text,
-          inspectedAt: _visitDate,
-          imageAttachments: _imageUploadFiles.isEmpty ? null : _imageUploadFiles,
-        );
-        reportNo = result['report_no'] as String?;
-        reportId = result['id'] as String?;
-        if (_draftId != null && reportId != null) {
-          await LocalDb().updateDraftStatus(_draftId!, 'sent', reportNo: reportNo, reportPublicId: reportId);
-        }
-      }
-
-      setState(() {
-        _snapMode = true;
-        _reportNo = reportNo;
-      });
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      final pages = <Uint8List>[];
-      for (final key in [_captureKey, _captureKey2]) {
-        Uint8List? png = await _captureScreenshot(key);
-        if (png == null) {
-          await Future.delayed(const Duration(milliseconds: 300));
-          png = await _captureScreenshot(key);
-        }
-        if (png != null) pages.add(png);
-      }
-
-      setState(() => _snapMode = false);
-
-      if (pages.isEmpty || reportId == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Screenshot failed. Press Send again to retry (report no. is saved).'),
-              duration: Duration(seconds: 5),
-            ),
-          );
-        }
-        return;
-      }
-
-      final pdfBytes = await _imagesToPdf(pages);
-      if (_draftId != null) {
-        await LocalDb().savePdfData(_draftId!, pdfBytes);
-      }
-
-      final uploadResult = await ReportApi().uploadPdf(reportId, pdfBytes);
-
-      if (_draftId != null) {
-        await LocalDb().clearPdfData(_draftId!);
-      }
-
-      final status = uploadResult['status'] as String?;
-      if (mounted) {
-        setState(() { _isSending = false; _snapMode = false; });
-        await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => status == 'email_failed'
-              ? SendResultDialog(
-                  success: false,
-                  title: 'Email Failed',
-                  message: 'Report No: $reportNo\n\nReport was saved but email failed.\nYou can retry from Report History.',
-                )
-              : SendResultDialog(
-                  success: true,
-                  title: 'Send Complete',
-                  message: 'Report No: $reportNo',
-                ),
-        );
-        if (mounted) Navigator.pop(context, true);  // back to home/draft list
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() { _isSending = false; _snapMode = false; });
-        await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => SendResultDialog(
-            success: false,
-            title: 'Send Failed',
-            message: '$e',
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() { _isSending = false; _snapMode = false; });
-    }
-  }
-
-  // ============ VALIDATION ============
-  List<String> _missingRequired() {
-    final missing = <String>[];
-    if (_visitDate == null || _visitDate!.isEmpty) missing.add('Visit Date');
-    if (_finishDate == null || _finishDate!.isEmpty) missing.add('Finish Date');
-    if (_timeIn == null || _timeIn!.isEmpty) missing.add('Time In');
-    if (_timeOut == null || _timeOut!.isEmpty) missing.add('Time Out');
-    if (_customerName == null || _customerName!.isEmpty) missing.add('Customer Name');
-    if (_modelName == null || _modelName!.isEmpty) missing.add('Model Name');
-    if (_serialNoController.text.trim().isEmpty) missing.add('Serial No');
-    if (_customerContactController.text.trim().isEmpty) missing.add('Contact');
-    if (_detailOfServiceController.text.trim().isEmpty) missing.add('Detail of Service');
-    if (_typeOfService.isEmpty) missing.add('Type of Service');
-    if (_customerSignNameController.text.trim().isEmpty) missing.add('Customer Sign Name');
-    if (_staffSignNameController.text.trim().isEmpty) missing.add('Service Staff Sign Name');
-    final hasAnyPart = List.generate(18, (idx) => _partNameFor(idx + 1))
-        .any((n) => n != null && n.isNotEmpty);
-    if (!hasAnyPart) missing.add('Parts (at least 1 row)');
-    // Per-row consistency: name without qty / orphan qty without name
-    for (int i = 1; i <= 18; i++) {
-      final name = _partNameFor(i);
-      final qty = _partQtyCtrlFor(i).text.trim();
-      final nameFilled = name != null && name.isNotEmpty;
-      final qtyFilled = qty.isNotEmpty;
-      if (nameFilled && !qtyFilled) {
-        missing.add('Qty for "$name" (row $i)');
-      } else if (!nameFilled && qtyFilled) {
-        // orphan qty — name was cleared but qty controller still has value; clean up
-        _partQtyCtrlFor(i).text = '';
-      }
-    }
-    return missing;
-  }
-
-  List<String> _missingSignatures() {
-    final m = <String>[];
-    if (_customerSignBytes == null) m.add('Customer signature');
-    if (_staffSignBytes == null) m.add('Service staff signature');
-    return m;
-  }
-
-  Future<void> _showIncompleteDialog(List<String> missing, List<String> missingSigns) async {
-    final parts = <String>[];
-    if (missing.isNotEmpty) parts.add('Please fill in:\n${missing.join('\n')}');
-    if (missingSigns.isNotEmpty) parts.add('Missing signature:\n${missingSigns.join('\n')}');
-    if (parts.isEmpty || !mounted) return;
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Incomplete'),
-        content: Text(parts.join('\n\n')),
-        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))],
-      ),
-    );
-  }
-
-  Future<bool> _validateForPreview() async {
-    final missing = _missingRequired();
-    final missingSigns = _missingSignatures();
-    if (missing.isEmpty && missingSigns.isEmpty) return true;
-    if (mounted) setState(() => _showValidation = true);
-    await _showIncompleteDialog(missing, missingSigns);
-    return false;
-  }
-
-  // ============ BUILD ============
-  @override
-  Widget build(BuildContext context) => PreviewShell(
-    pages: [_page1(), _page2()],
-    onBack: () => Navigator.of(context).pop(),
-    onSaveDraft: _isSaving ? null : onSave,
-    onConfirmSend: _isSending ? null : onSend,
-    onReset: onReset,
-    onModeChanged: (review) => setState(() => _snapMode = review),
-    onBeforePreview: _validateForPreview,
-  );
+  Widget build(BuildContext context) => PreviewShell(pages: [
+      _page1(),
+      _page2(),
+  ]);
 
   Widget _page1() => RepaintBoundary(key: _captureKey, child: UnconstrainedBox(
   alignment: Alignment.topLeft,
@@ -841,7 +254,7 @@ class ReportScreen2State extends State<ReportScreen2> {
       21.0,
     ];
 
-    final rowHeights = <double>[24.0, 20.0, 20.0, 20.0, 20.0, 29.0, 24.0, 24.0, 24.0, 24.0, 24.0, 20.0, 27.0, 20.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 20.0];
+    final rowHeights = <double>[24.0, 20.0, 20.0, 20.0, 20.0, 29.0, 24.0, 24.0, 24.0, 24.0, 24.0, 20.0, 27.0, 20.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 30.0, 20.0, 20.0, 20.0, 20.0];
 
     final cs = <double>[0.0];
     for (final w in colWidths) { cs.add(cs.last + w); }
@@ -890,27 +303,30 @@ class ReportScreen2State extends State<ReportScreen2> {
       <int>[472, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 473],
       <int>[474, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 466, 475],
       <int>[476, 477, 478, 479, 480, 481, 482, 483, 484, 485, 486, 487, 488, 489, 490, 491, 492, 493, 494, 495, 496, 497, 498, 499, 500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521],
-      <int>[522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522, 522],
-      <int>[523, 524, 524, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 525, 526, 526, 526, 526, 526, 527, 527, 527, 527, 528, 528, 528, 528, 528, 528, 529, 529, 529, 529, 529, 529, 529, 529, 529, 530],
-      <int>[531, 532, 532, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 533, 534, 534, 534, 534, 534, 535, 535, 535, 535, 536, 536, 536, 536, 536, 536, 537, 537, 537, 537, 537, 537, 537, 537, 537, 538],
-      <int>[539, 540, 540, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 541, 542, 542, 542, 542, 542, 543, 543, 543, 543, 544, 544, 544, 544, 544, 544, 545, 545, 545, 545, 545, 545, 545, 545, 545, 546],
-      <int>[547, 548, 548, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 549, 550, 550, 550, 550, 550, 551, 551, 551, 551, 552, 552, 552, 552, 552, 552, 553, 553, 553, 553, 553, 553, 553, 553, 553, 554],
-      <int>[555, 556, 556, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 557, 558, 558, 558, 558, 558, 559, 559, 559, 559, 560, 560, 560, 560, 560, 560, 561, 561, 561, 561, 561, 561, 561, 561, 561, 562],
-      <int>[563, 564, 564, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 565, 566, 566, 566, 566, 566, 567, 567, 567, 567, 568, 568, 568, 568, 568, 568, 569, 569, 569, 569, 569, 569, 569, 569, 569, 570],
-      <int>[571, 572, 572, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 573, 574, 574, 574, 574, 574, 575, 575, 575, 575, 576, 576, 576, 576, 576, 576, 577, 577, 577, 577, 577, 577, 577, 577, 577, 578],
-      <int>[579, 580, 580, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 581, 582, 582, 582, 582, 582, 583, 583, 583, 583, 584, 584, 584, 584, 584, 584, 585, 585, 585, 585, 585, 585, 585, 585, 585, 586],
-      <int>[587, 588, 588, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 589, 590, 590, 590, 590, 590, 591, 591, 591, 591, 592, 592, 592, 592, 592, 592, 593, 593, 593, 593, 593, 593, 593, 593, 593, 594],
-      <int>[595, 596, 596, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 597, 598, 598, 598, 598, 598, 599, 599, 599, 599, 600, 600, 600, 600, 600, 600, 601, 601, 601, 601, 601, 601, 601, 601, 601, 602],
-      <int>[603, 604, 604, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 605, 606, 606, 606, 606, 606, 607, 607, 607, 607, 608, 608, 608, 608, 608, 608, 609, 609, 609, 609, 609, 609, 609, 609, 609, 610],
-      <int>[611, 612, 612, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 613, 614, 614, 614, 614, 614, 615, 615, 615, 615, 616, 616, 616, 616, 616, 616, 617, 617, 617, 617, 617, 617, 617, 617, 617, 618],
-      <int>[619, 620, 620, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 621, 622, 622, 622, 622, 622, 623, 623, 623, 623, 624, 624, 624, 624, 624, 624, 625, 625, 625, 625, 625, 625, 625, 625, 625, 626],
-      <int>[627, 628, 628, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 629, 630, 630, 630, 630, 630, 631, 631, 631, 631, 632, 632, 632, 632, 632, 632, 633, 633, 633, 633, 633, 633, 633, 633, 633, 634],
-      <int>[635, 636, 636, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 637, 638, 638, 638, 638, 638, 639, 639, 639, 639, 640, 640, 640, 640, 640, 640, 641, 641, 641, 641, 641, 641, 641, 641, 641, 642],
-      <int>[643, 644, 644, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 645, 646, 646, 646, 646, 646, 647, 647, 647, 647, 648, 648, 648, 648, 648, 648, 649, 649, 649, 649, 649, 649, 649, 649, 649, 650],
-      <int>[651, 652, 652, 652, 652, 652, 652, 653, 654, 655, 656, 657, 658, 659, 660, 661, 662, 663, 664, 665, 666, 667, 668, 669, 670, 671, 672, 673, 674, 675, 676, 677, 678, 679, 680, 681, 682, 682, 682, 682, 682, 682, 682, 682, 682, 683],
-      <int>[684, 685, 685, 685, 685, 685, 685, 685, 685, 686, 686, 686, 686, 687, 688, 688, 688, 688, 689, 689, 689, 692, 693, 694, 695, 696, 697, 698, 699, 700, 701, 702, 703, 704, 705, 706, 707, 707, 707, 707, 707, 707, 707, 707, 707, 708],
-      <int>[709, 710, 710, 710, 710, 710, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719, 720, 721, 722, 723, 724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 735, 736, 737, 738, 739, 740, 740, 740, 740, 740, 740, 740, 740, 740, 741],
-      <int>[742, 743, 744, 745, 746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765, 766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787],
+      <int>[522, 523, 524, 525, 526, 527, 528, 529, 530, 531, 532, 533, 534, 535, 536, 537, 538, 539, 540, 540, 540, 540, 540, 540, 540, 540, 540, 541, 542, 543, 544, 545, 546, 547, 548, 549, 550, 551, 552, 553, 554, 555, 556, 557, 558, 559],
+      <int>[560, 561, 561, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 562, 563, 563, 563, 563, 563, 563, 564, 564, 564, 564, 564, 564, 564, 564, 564, 565],
+      <int>[566, 567, 567, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 568, 569, 569, 569, 569, 569, 569, 570, 570, 570, 570, 570, 570, 570, 570, 570, 571],
+      <int>[572, 573, 573, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 574, 575, 575, 575, 575, 575, 575, 576, 576, 576, 576, 576, 576, 576, 576, 576, 577],
+      <int>[578, 579, 579, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 580, 581, 581, 581, 581, 581, 581, 582, 582, 582, 582, 582, 582, 582, 582, 582, 583],
+      <int>[584, 585, 585, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 586, 587, 587, 587, 587, 587, 587, 588, 588, 588, 588, 588, 588, 588, 588, 588, 589],
+      <int>[590, 591, 591, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 592, 593, 593, 593, 593, 593, 593, 594, 594, 594, 594, 594, 594, 594, 594, 594, 595],
+      <int>[596, 597, 597, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 598, 599, 599, 599, 599, 599, 599, 600, 600, 600, 600, 600, 600, 600, 600, 600, 601],
+      <int>[602, 603, 603, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 604, 605, 605, 605, 605, 605, 605, 606, 606, 606, 606, 606, 606, 606, 606, 606, 607],
+      <int>[608, 609, 609, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 610, 611, 611, 611, 611, 611, 611, 612, 612, 612, 612, 612, 612, 612, 612, 612, 613],
+      <int>[614, 615, 615, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 616, 617, 617, 617, 617, 617, 617, 618, 618, 618, 618, 618, 618, 618, 618, 618, 619],
+      <int>[620, 621, 621, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 622, 623, 623, 623, 623, 623, 623, 624, 624, 624, 624, 624, 624, 624, 624, 624, 625],
+      <int>[626, 627, 627, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 628, 629, 629, 629, 629, 629, 629, 630, 630, 630, 630, 630, 630, 630, 630, 630, 631],
+      <int>[632, 633, 633, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 634, 635, 635, 635, 635, 635, 635, 636, 636, 636, 636, 636, 636, 636, 636, 636, 637],
+      <int>[638, 639, 639, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 640, 641, 641, 641, 641, 641, 641, 642, 642, 642, 642, 642, 642, 642, 642, 642, 643],
+      <int>[644, 645, 645, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 646, 647, 647, 647, 647, 647, 647, 648, 648, 648, 648, 648, 648, 648, 648, 648, 649],
+      <int>[650, 651, 651, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 652, 653, 653, 653, 653, 653, 653, 654, 654, 654, 654, 654, 654, 654, 654, 654, 655],
+      <int>[656, 657, 657, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 658, 659, 659, 659, 659, 659, 659, 660, 660, 660, 660, 660, 660, 660, 660, 660, 661],
+      <int>[662, 663, 663, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 664, 665, 665, 665, 665, 665, 665, 666, 666, 666, 666, 666, 666, 666, 666, 666, 667],
+      <int>[668, 669, 669, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 670, 671, 671, 671, 671, 671, 671, 672, 672, 672, 672, 672, 672, 672, 672, 672, 673],
+      <int>[674, 675, 676, 677, 678, 679, 680, 681, 682, 683, 684, 685, 686, 687, 688, 689, 690, 691, 692, 693, 694, 695, 696, 697, 698, 699, 700, 701, 702, 703, 704, 705, 706, 707, 708, 709, 710, 711, 712, 713, 714, 715, 716, 717, 718, 719],
+      <int>[720, 721, 722, 723, 724, 725, 726, 727, 728, 729, 730, 731, 732, 733, 734, 735, 736, 737, 738, 739, 740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762, 763, 764, 765],
+      <int>[766, 767, 768, 769, 770, 771, 772, 773, 774, 775, 776, 777, 778, 779, 780, 781, 782, 783, 784, 785, 786, 787, 788, 789, 790, 791, 792, 793, 794, 795, 796, 797, 798, 799, 800, 801, 802, 803, 804, 805, 806, 807, 808, 809, 810, 811],
+      <int>[812, 813, 814, 815, 816, 817, 818, 819, 820, 821, 822, 823, 824, 825, 826, 827, 828, 829, 830, 831, 832, 833, 834, 835, 836, 837, 838, 839, 840, 841, 842, 843, 844, 845, 846, 847, 848, 849, 850, 851, 852, 853, 854, 855, 856, 857],
     ];
 
     return SizedBox(
@@ -1099,7 +515,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               )),
           Positioned(left: cs[37], top: rs[5], width: cs[44] - cs[37], height: rs[6] - rs[5], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: Text(_reportNo ?? '', style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6, color: Color(0xFF000000)), softWrap: false, overflow: TextOverflow.visible))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: const SizedBox.shrink())),
 
 
 
@@ -1248,7 +664,7 @@ class ReportScreen2State extends State<ReportScreen2> {
           Positioned(left: cs[1] - 1.0, top: rs[7] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
           Positioned(left: cs[6], top: rs[7], width: cs[17] - cs[6], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'visit_date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _visitDate, onChanged: (v) => setState(() => _visitDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'visit_date', required: true, snapMode: _snapMode, value: _visitDate, onChanged: (v) => setState(() => _visitDate = v)))),
           Positioned(left: cs[17], top: rs[7], width: cs[18] - cs[17], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
@@ -1272,7 +688,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[27], top: rs[7], width: cs[36] - cs[27], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormTime(name: 'time_in', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _timeIn, onChanged: (v) => setState(() => _timeIn = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormTime(name: 'time_in', required: true, snapMode: _snapMode, value: _timeIn, onChanged: (v) => setState(() => _timeIn = v)))),
           Positioned(left: cs[36], top: rs[7], width: cs[37] - cs[36], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
@@ -1312,7 +728,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[6], top: rs[8], width: cs[17] - cs[6], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'finish_date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _finishDate, onChanged: (v) => setState(() => _finishDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'finish_date', required: true, snapMode: _snapMode, value: _finishDate, onChanged: (v) => setState(() => _finishDate = v)))),
           Positioned(left: cs[17], top: rs[8], width: cs[18] - cs[17], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
@@ -1336,7 +752,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[27], top: rs[8], width: cs[36] - cs[27], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormTime(name: 'time_out', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _timeOut, onChanged: (v) => setState(() => _timeOut = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormTime(name: 'time_out', required: true, snapMode: _snapMode, value: _timeOut, onChanged: (v) => setState(() => _timeOut = v)))),
           Positioned(left: cs[36], top: rs[8], width: cs[37] - cs[36], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: const SizedBox.shrink())),
@@ -1376,16 +792,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[8], top: rs[9], width: cs[29] - cs[8], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _customerName, onSelected: (v) {
-                if (v == null) return;
-                setState(() {
-                  _customerName = v['name'] as String?;
-                  final contact = v['contact_name'];
-                  _customerContactController.text = contact is String ? contact : '';
-                  final email = v['email'];
-                  _customerEmail = email is String ? email : null;
-                });
-              }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name,tel', fields: 'customer_name,customer_tel', required: true, snapMode: _snapMode, value: _customerName, onSelected: (v) => setState(() => _customerName = v?['customer_name,customer_tel'] as String?)))),
           Positioned(left: cs[29], top: rs[9], width: cs[33] - cs[29], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -1394,7 +801,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[33], top: rs[9], width: cs[45] - cs[33], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_customerContactController))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _customerTelController, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[10], width: cs[1] - cs[0], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
@@ -1407,13 +814,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[7], top: rs[10], width: cs[20] - cs[7], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'model_name', source: 'machine_models', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _modelName, onSelected: (v) {
-                if (v == null) return;
-                setState(() {
-                  _modelName = v['model_name'] as String?;
-                  _machineModel = v;
-                });
-              }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'model_name', source: 'machine_models', displayFields: 'model_code,model_name', fields: 'model_name', required: true, snapMode: _snapMode, value: _modelName, onSelected: (v) => setState(() => _modelName = v?['model_name'] as String?)))),
           Positioned(left: cs[20], top: rs[10], width: cs[25] - cs[20], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -1422,7 +823,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[25], top: rs[10], width: cs[45] - cs[25], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_serialNoController))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _serialNoController, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
 
 
@@ -1479,22 +880,7 @@ class ReportScreen2State extends State<ReportScreen2> {
                 style: TextStyle(fontFamily: 'Calibri', fontSize: 16.0, fontWeight: FontWeight.bold, color: Color(0xFF000000)),
                 child: Text('TYPE OF SERVICE*', softWrap: false, overflow: TextOverflow.visible),
               )),
-          cell(10, 12, 38, 13, pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: FormCheckbox(
-            name: 'type_of_service',
-            options: const ['WARRANTY', 'MAINTENANCE', 'REPAIR'],
-            rowLayout: true,
-            required: true,
-            showValidation: _showValidation,
-            value: {'selected': _typeOfService.toList()},
-            onChanged: (v) {
-              if (v is Map) {
-                final sel = v['selected'];
-                if (sel is List) {
-                  _typeOfService = sel.whereType<String>().toSet();
-                }
-              }
-            },
-          )),
+          cell(10, 12, 38, 13, pad: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), child: FormCheckbox(name: 'type_of_service', options: ['WARRANTY', 'MAINTENANCE', 'REPAIR'])),
 
 
 
@@ -1661,7 +1047,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[15], width: cs[45] - cs[1], height: rs[23] - rs[15], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_detailOfServiceController, expands: true, fontSize: 16))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _detailOfServiceController, maxLines: null, minLines: null, expands: true, textAlignVertical: TextAlignVertical.top, style: const TextStyle(fontFamily: 'Calibri', fontSize: 16), decoration: _inputDecoration))),
           Positioned(left: cs[1] - 1.0, top: rs[15] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
 
           Positioned(left: cs[0], top: rs[16], width: cs[1] - cs[0], height: rs[17] - rs[16], child: Container(
@@ -1845,15 +1231,122 @@ class ReportScreen2State extends State<ReportScreen2> {
 
 
 
-          Positioned(left: cs[1], top: rs[30], width: cs[45] - cs[1], height: rs[31] - rs[30], child: Container(
+
+          Positioned(left: cs[1], top: rs[30], width: cs[2] - cs[1], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[2], top: rs[30], width: cs[3] - cs[2], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[3], top: rs[30], width: cs[4] - cs[3], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[4], top: rs[30], width: cs[5] - cs[4], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[5], top: rs[30], width: cs[6] - cs[5], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[6], top: rs[30], width: cs[7] - cs[6], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[7], top: rs[30], width: cs[8] - cs[7], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[8], top: rs[30], width: cs[9] - cs[8], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[9], top: rs[30], width: cs[10] - cs[9], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[10], top: rs[30], width: cs[11] - cs[10], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[11], top: rs[30], width: cs[12] - cs[11], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[12], top: rs[30], width: cs[13] - cs[12], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[13], top: rs[30], width: cs[14] - cs[13], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[14], top: rs[30], width: cs[15] - cs[14], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[15], top: rs[30], width: cs[16] - cs[15], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[16], top: rs[30], width: cs[17] - cs[16], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[17], top: rs[30], width: cs[18] - cs[17], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[18], top: rs[30], width: cs[27] - cs[18], height: rs[31] - rs[30], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
                 style: TextStyle(fontFamily: 'Calibri', fontSize: 16.0, fontWeight: FontWeight.bold, color: Color(0xFF000000)),
                 child: Text('PARTS / MATERIALS', softWrap: false, overflow: TextOverflow.visible, textAlign: TextAlign.center),
               ))),
+          Positioned(left: cs[27], top: rs[30], width: cs[28] - cs[27], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[28], top: rs[30], width: cs[29] - cs[28], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[29], top: rs[30], width: cs[30] - cs[29], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[30], top: rs[30], width: cs[31] - cs[30], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[31], top: rs[30], width: cs[32] - cs[31], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[32], top: rs[30], width: cs[33] - cs[32], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[33], top: rs[30], width: cs[34] - cs[33], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[34], top: rs[30], width: cs[35] - cs[34], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[35], top: rs[30], width: cs[36] - cs[35], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[36], top: rs[30], width: cs[37] - cs[36], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[37], top: rs[30], width: cs[38] - cs[37], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[38], top: rs[30], width: cs[39] - cs[38], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[39], top: rs[30], width: cs[40] - cs[39], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[40], top: rs[30], width: cs[41] - cs[40], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[41], top: rs[30], width: cs[42] - cs[41], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[42], top: rs[30], width: cs[43] - cs[42], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[43], top: rs[30], width: cs[44] - cs[43], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[44], top: rs[30], width: cs[45] - cs[44], height: rs[31] - rs[30], child: Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 2))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+
           Positioned(left: cs[0], top: rs[31], width: cs[1] - cs[0], height: rs[32] - rs[31], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[31], width: cs[3] - cs[1], height: rs[32] - rs[31], child: Stack(children: [Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -1882,291 +1375,429 @@ class ReportScreen2State extends State<ReportScreen2> {
 
           Positioned(left: cs[0], top: rs[32], width: cs[1] - cs[0], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[32], width: cs[3] - cs[1], height: rs[33] - rs[32], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo1Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[32], width: cs[3] - cs[1], height: rs[33] - rs[32], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo1Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[32], width: cs[30] - cs[3], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_1', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_1,part_code1', enabled: _isPartRowEnabled(1), onCleared: () => _clearPartRow(1), snapMode: _snapMode, showValidation: _showValidation, value: _partName1, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName1 = n; }, codeCtrl: _partCode1Controller)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_1', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_1,part_code1', required: true, snapMode: _snapMode, value: _partName1, onSelected: (v) => setState(() => _partName1 = v?['part_name_1,part_code1'] as String?)))),
           Positioned(left: cs[30], top: rs[32], width: cs[36] - cs[30], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode1Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode1Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
           Positioned(left: cs[36], top: rs[32], width: cs[45] - cs[36], height: rs[33] - rs[32], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(1) ?? "").isNotEmpty) ? TextField(controller: _partQty1Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partQty1Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[33], width: cs[1] - cs[0], height: rs[34] - rs[33], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[33], width: cs[3] - cs[1], height: rs[34] - rs[33], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo2Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[33], width: cs[3] - cs[1], height: rs[34] - rs[33], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo2Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[33], width: cs[30] - cs[3], height: rs[34] - rs[33], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_2', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_2,part_code2', enabled: _isPartRowEnabled(2), onCleared: () => _clearPartRow(2), snapMode: _snapMode, showValidation: _showValidation, value: _partName2, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName2 = n; }, codeCtrl: _partCode2Controller)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_2', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_2,part_code2', required: true, snapMode: _snapMode, value: _partName2, onSelected: (v) => setState(() => _partName2 = v?['part_name_2,part_code2'] as String?)))),
           Positioned(left: cs[30], top: rs[33], width: cs[36] - cs[30], height: rs[34] - rs[33], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode2Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode2Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
           Positioned(left: cs[36], top: rs[33], width: cs[45] - cs[36], height: rs[34] - rs[33], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(2) ?? "").isNotEmpty) ? TextField(controller: _partQty2Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty2Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[34], width: cs[1] - cs[0], height: rs[35] - rs[34], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[34], width: cs[3] - cs[1], height: rs[35] - rs[34], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo3Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[34], width: cs[3] - cs[1], height: rs[35] - rs[34], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo3Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[34], width: cs[30] - cs[3], height: rs[35] - rs[34], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_3', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_3,part_code3', enabled: _isPartRowEnabled(3), onCleared: () => _clearPartRow(3), snapMode: _snapMode, showValidation: _showValidation, value: _partName3, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName3 = n; }, codeCtrl: _partCode3Controller)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_3', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_3,part_code3', required: true, snapMode: _snapMode, value: _partName3, onSelected: (v) => setState(() => _partName3 = v?['part_name_3,part_code3'] as String?)))),
           Positioned(left: cs[30], top: rs[34], width: cs[36] - cs[30], height: rs[35] - rs[34], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode3Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode3Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
           Positioned(left: cs[36], top: rs[34], width: cs[45] - cs[36], height: rs[35] - rs[34], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(3) ?? "").isNotEmpty) ? TextField(controller: _partQty3Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty3Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[35], width: cs[1] - cs[0], height: rs[36] - rs[35], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[35], width: cs[3] - cs[1], height: rs[36] - rs[35], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo4Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[35], width: cs[3] - cs[1], height: rs[36] - rs[35], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo4Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[35], width: cs[30] - cs[3], height: rs[36] - rs[35], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_4', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_4,part_code4', enabled: _isPartRowEnabled(4), onCleared: () => _clearPartRow(4), snapMode: _snapMode, showValidation: _showValidation, value: _partName4, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName4 = n; }, codeCtrl: _partCode4Controller)))),
-          Positioned(left: cs[30], top: rs[35], width: cs[36] - cs[30], height: rs[36] - rs[35], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode4Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_4', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_4,part_code4', required: true, snapMode: _snapMode, value: _partName4, onSelected: (v) => setState(() => _partName4 = v?['part_name_4,part_code4'] as String?)))),
+          Positioned(left: cs[30], top: rs[35], width: cs[36] - cs[30], height: rs[36] - rs[35], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode4Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[35], width: cs[45] - cs[36], height: rs[36] - rs[35], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(4) ?? "").isNotEmpty) ? TextField(controller: _partQty4Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty4Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[36], width: cs[1] - cs[0], height: rs[37] - rs[36], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[36], width: cs[3] - cs[1], height: rs[37] - rs[36], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo5Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[36], width: cs[3] - cs[1], height: rs[37] - rs[36], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo5Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[36], width: cs[30] - cs[3], height: rs[37] - rs[36], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_5', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_5,part_code5', enabled: _isPartRowEnabled(5), onCleared: () => _clearPartRow(5), snapMode: _snapMode, showValidation: _showValidation, value: _partName5, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName5 = n; }, codeCtrl: _partCode5Controller)))),
-          Positioned(left: cs[30], top: rs[36], width: cs[36] - cs[30], height: rs[37] - rs[36], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode5Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_5', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_5,part_code5', required: true, snapMode: _snapMode, value: _partName5, onSelected: (v) => setState(() => _partName5 = v?['part_name_5,part_code5'] as String?)))),
+          Positioned(left: cs[30], top: rs[36], width: cs[36] - cs[30], height: rs[37] - rs[36], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode5Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[36], width: cs[45] - cs[36], height: rs[37] - rs[36], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(5) ?? "").isNotEmpty) ? TextField(controller: _partQty5Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty5Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[37], width: cs[1] - cs[0], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[37], width: cs[3] - cs[1], height: rs[38] - rs[37], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo6Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[37], width: cs[3] - cs[1], height: rs[38] - rs[37], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo6Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[37], width: cs[30] - cs[3], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_6', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_6,part_code6', enabled: _isPartRowEnabled(6), onCleared: () => _clearPartRow(6), snapMode: _snapMode, showValidation: _showValidation, value: _partName6, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName6 = n; }, codeCtrl: _partCode6Controller)))),
-          Positioned(left: cs[30], top: rs[37], width: cs[36] - cs[30], height: rs[38] - rs[37], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode6Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_6', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_6,part_code6', required: true, snapMode: _snapMode, value: _partName6, onSelected: (v) => setState(() => _partName6 = v?['part_name_6,part_code6'] as String?)))),
+          Positioned(left: cs[30], top: rs[37], width: cs[36] - cs[30], height: rs[38] - rs[37], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode6Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[37], width: cs[45] - cs[36], height: rs[38] - rs[37], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(6) ?? "").isNotEmpty) ? TextField(controller: _partQty6Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty6Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[38], width: cs[1] - cs[0], height: rs[39] - rs[38], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[38], width: cs[3] - cs[1], height: rs[39] - rs[38], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo7Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[38], width: cs[3] - cs[1], height: rs[39] - rs[38], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo7Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[38], width: cs[30] - cs[3], height: rs[39] - rs[38], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_7', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_7,part_code7', enabled: _isPartRowEnabled(7), onCleared: () => _clearPartRow(7), snapMode: _snapMode, showValidation: _showValidation, value: _partName7, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName7 = n; }, codeCtrl: _partCode7Controller)))),
-          Positioned(left: cs[30], top: rs[38], width: cs[36] - cs[30], height: rs[39] - rs[38], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode7Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_7', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_7,part_code7', required: true, snapMode: _snapMode, value: _partName7, onSelected: (v) => setState(() => _partName7 = v?['part_name_7,part_code7'] as String?)))),
+          Positioned(left: cs[30], top: rs[38], width: cs[36] - cs[30], height: rs[39] - rs[38], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode7Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[38], width: cs[45] - cs[36], height: rs[39] - rs[38], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(7) ?? "").isNotEmpty) ? TextField(controller: _partQty7Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty7Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[39], width: cs[1] - cs[0], height: rs[40] - rs[39], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[39], width: cs[3] - cs[1], height: rs[40] - rs[39], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo8Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[39], width: cs[3] - cs[1], height: rs[40] - rs[39], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo8Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[39], width: cs[30] - cs[3], height: rs[40] - rs[39], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_8', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_8,part_code8', enabled: _isPartRowEnabled(8), onCleared: () => _clearPartRow(8), snapMode: _snapMode, showValidation: _showValidation, value: _partName8, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName8 = n; }, codeCtrl: _partCode8Controller)))),
-          Positioned(left: cs[30], top: rs[39], width: cs[36] - cs[30], height: rs[40] - rs[39], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode8Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_8', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_8,part_code8', required: true, snapMode: _snapMode, value: _partName8, onSelected: (v) => setState(() => _partName8 = v?['part_name_8,part_code8'] as String?)))),
+          Positioned(left: cs[30], top: rs[39], width: cs[36] - cs[30], height: rs[40] - rs[39], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode8Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[39], width: cs[45] - cs[36], height: rs[40] - rs[39], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(8) ?? "").isNotEmpty) ? TextField(controller: _partQty8Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty8Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[40], width: cs[1] - cs[0], height: rs[41] - rs[40], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[40], width: cs[3] - cs[1], height: rs[41] - rs[40], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo9Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[40], width: cs[3] - cs[1], height: rs[41] - rs[40], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo9Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[40], width: cs[30] - cs[3], height: rs[41] - rs[40], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_9', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_9,part_code9', enabled: _isPartRowEnabled(9), onCleared: () => _clearPartRow(9), snapMode: _snapMode, showValidation: _showValidation, value: _partName9, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName9 = n; }, codeCtrl: _partCode9Controller)))),
-          Positioned(left: cs[30], top: rs[40], width: cs[36] - cs[30], height: rs[41] - rs[40], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode9Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_9', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_9,part_code9', required: true, snapMode: _snapMode, value: _partName9, onSelected: (v) => setState(() => _partName9 = v?['part_name_9,part_code9'] as String?)))),
+          Positioned(left: cs[30], top: rs[40], width: cs[36] - cs[30], height: rs[41] - rs[40], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode9Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[40], width: cs[45] - cs[36], height: rs[41] - rs[40], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(9) ?? "").isNotEmpty) ? TextField(controller: _partQty9Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty9Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[41], width: cs[1] - cs[0], height: rs[42] - rs[41], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[41], width: cs[3] - cs[1], height: rs[42] - rs[41], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo10Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[41], width: cs[3] - cs[1], height: rs[42] - rs[41], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo10Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[41], width: cs[30] - cs[3], height: rs[42] - rs[41], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_10', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_10,part_code10', enabled: _isPartRowEnabled(10), onCleared: () => _clearPartRow(10), snapMode: _snapMode, showValidation: _showValidation, value: _partName10, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName10 = n; }, codeCtrl: _partCode10Controller)))),
-          Positioned(left: cs[30], top: rs[41], width: cs[36] - cs[30], height: rs[42] - rs[41], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode10Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_10', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_10,part_code10', required: true, snapMode: _snapMode, value: _partName10, onSelected: (v) => setState(() => _partName10 = v?['part_name_10,part_code10'] as String?)))),
+          Positioned(left: cs[30], top: rs[41], width: cs[36] - cs[30], height: rs[42] - rs[41], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode10Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[41], width: cs[45] - cs[36], height: rs[42] - rs[41], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(10) ?? "").isNotEmpty) ? TextField(controller: _partQty10Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty10Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[42], width: cs[1] - cs[0], height: rs[43] - rs[42], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[42], width: cs[3] - cs[1], height: rs[43] - rs[42], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo11Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[42], width: cs[3] - cs[1], height: rs[43] - rs[42], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo11Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[42], width: cs[30] - cs[3], height: rs[43] - rs[42], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_11', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_11,part_code11', enabled: _isPartRowEnabled(11), onCleared: () => _clearPartRow(11), snapMode: _snapMode, showValidation: _showValidation, value: _partName11, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName11 = n; }, codeCtrl: _partCode11Controller)))),
-          Positioned(left: cs[30], top: rs[42], width: cs[36] - cs[30], height: rs[43] - rs[42], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode11Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_11', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_11,part_code11', required: true, snapMode: _snapMode, value: _partName11, onSelected: (v) => setState(() => _partName11 = v?['part_name_11,part_code11'] as String?)))),
+          Positioned(left: cs[30], top: rs[42], width: cs[36] - cs[30], height: rs[43] - rs[42], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode11Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[42], width: cs[45] - cs[36], height: rs[43] - rs[42], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(11) ?? "").isNotEmpty) ? TextField(controller: _partQty11Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty11Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[43], width: cs[1] - cs[0], height: rs[44] - rs[43], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[43], width: cs[3] - cs[1], height: rs[44] - rs[43], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo12Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[43], width: cs[3] - cs[1], height: rs[44] - rs[43], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo12Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[43], width: cs[30] - cs[3], height: rs[44] - rs[43], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_12', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_12,part_code12', enabled: _isPartRowEnabled(12), onCleared: () => _clearPartRow(12), snapMode: _snapMode, showValidation: _showValidation, value: _partName12, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName12 = n; }, codeCtrl: _partCode12Controller)))),
-          Positioned(left: cs[30], top: rs[43], width: cs[36] - cs[30], height: rs[44] - rs[43], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode12Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_12', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_1,2part_code12', required: true, snapMode: _snapMode, value: _partName12, onSelected: (v) => setState(() => _partName12 = v?['part_name_1,2part_code12'] as String?)))),
+          Positioned(left: cs[30], top: rs[43], width: cs[36] - cs[30], height: rs[44] - rs[43], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode12Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[43], width: cs[45] - cs[36], height: rs[44] - rs[43], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(12) ?? "").isNotEmpty) ? TextField(controller: _partQty12Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty12Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[44], width: cs[1] - cs[0], height: rs[45] - rs[44], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[44], width: cs[3] - cs[1], height: rs[45] - rs[44], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo13Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[44], width: cs[3] - cs[1], height: rs[45] - rs[44], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo13Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[44], width: cs[30] - cs[3], height: rs[45] - rs[44], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_13', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_13,part_code13', enabled: _isPartRowEnabled(13), onCleared: () => _clearPartRow(13), snapMode: _snapMode, showValidation: _showValidation, value: _partName13, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName13 = n; }, codeCtrl: _partCode13Controller)))),
-          Positioned(left: cs[30], top: rs[44], width: cs[36] - cs[30], height: rs[45] - rs[44], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode13Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_13', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_13,part_code13', required: true, snapMode: _snapMode, value: _partName13, onSelected: (v) => setState(() => _partName13 = v?['part_name_13,part_code13'] as String?)))),
+          Positioned(left: cs[30], top: rs[44], width: cs[36] - cs[30], height: rs[45] - rs[44], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode13Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[44], width: cs[45] - cs[36], height: rs[45] - rs[44], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(13) ?? "").isNotEmpty) ? TextField(controller: _partQty13Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty13Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[45], width: cs[1] - cs[0], height: rs[46] - rs[45], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[45], width: cs[3] - cs[1], height: rs[46] - rs[45], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo14Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[45], width: cs[3] - cs[1], height: rs[46] - rs[45], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo14Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[45], width: cs[30] - cs[3], height: rs[46] - rs[45], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_14', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_14,part_code14', enabled: _isPartRowEnabled(14), onCleared: () => _clearPartRow(14), snapMode: _snapMode, showValidation: _showValidation, value: _partName14, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName14 = n; }, codeCtrl: _partCode14Controller)))),
-          Positioned(left: cs[30], top: rs[45], width: cs[36] - cs[30], height: rs[46] - rs[45], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode14Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_14', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_14,part_code14', required: true, snapMode: _snapMode, value: _partName14, onSelected: (v) => setState(() => _partName14 = v?['part_name_14,part_code14'] as String?)))),
+          Positioned(left: cs[30], top: rs[45], width: cs[36] - cs[30], height: rs[46] - rs[45], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode14Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[45], width: cs[45] - cs[36], height: rs[46] - rs[45], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(14) ?? "").isNotEmpty) ? TextField(controller: _partQty14Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty14Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[46], width: cs[1] - cs[0], height: rs[47] - rs[46], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[46], width: cs[3] - cs[1], height: rs[47] - rs[46], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo15Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[46], width: cs[3] - cs[1], height: rs[47] - rs[46], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo15Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[46], width: cs[30] - cs[3], height: rs[47] - rs[46], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_15', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_15,part_code15', enabled: _isPartRowEnabled(15), onCleared: () => _clearPartRow(15), snapMode: _snapMode, showValidation: _showValidation, value: _partName15, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName15 = n; }, codeCtrl: _partCode15Controller)))),
-          Positioned(left: cs[30], top: rs[46], width: cs[36] - cs[30], height: rs[47] - rs[46], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode15Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_15', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_15,part_code15', required: true, snapMode: _snapMode, value: _partName15, onSelected: (v) => setState(() => _partName15 = v?['part_name_15,part_code15'] as String?)))),
+          Positioned(left: cs[30], top: rs[46], width: cs[36] - cs[30], height: rs[47] - rs[46], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode15Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[46], width: cs[45] - cs[36], height: rs[47] - rs[46], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(15) ?? "").isNotEmpty) ? TextField(controller: _partQty15Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty15Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[47], width: cs[1] - cs[0], height: rs[48] - rs[47], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[47], width: cs[3] - cs[1], height: rs[48] - rs[47], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo16Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[47], width: cs[3] - cs[1], height: rs[48] - rs[47], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo16Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[47], width: cs[30] - cs[3], height: rs[48] - rs[47], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_16', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_16,part_code16', enabled: _isPartRowEnabled(16), onCleared: () => _clearPartRow(16), snapMode: _snapMode, showValidation: _showValidation, value: _partName16, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName16 = n; }, codeCtrl: _partCode16Controller)))),
-          Positioned(left: cs[30], top: rs[47], width: cs[36] - cs[30], height: rs[48] - rs[47], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode16Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_16', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_16,part_code16', required: true, snapMode: _snapMode, value: _partName16, onSelected: (v) => setState(() => _partName16 = v?['part_name_16,part_code16'] as String?)))),
+          Positioned(left: cs[30], top: rs[47], width: cs[36] - cs[30], height: rs[48] - rs[47], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode16Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[36], top: rs[47], width: cs[45] - cs[36], height: rs[48] - rs[47], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(16) ?? "").isNotEmpty) ? TextField(controller: _partQty16Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty16Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[48], width: cs[1] - cs[0], height: rs[49] - rs[48], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
-          Positioned(left: cs[1], top: rs[48], width: cs[3] - cs[1], height: rs[49] - rs[48], child: Container(
-              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo17Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
+          Positioned(left: cs[1], top: rs[48], width: cs[3] - cs[1], height: rs[49] - rs[48], child: Stack(children: [Container(
+              decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo17Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration)), Positioned.fill(child: IgnorePointer(child: CustomPaint(painter: _DashedBorderPainter(sides: [_DashSide.bottom(color: Color(0xFF000000), width: 3, doubled: true)]))))])),
           Positioned(left: cs[3], top: rs[48], width: cs[30] - cs[3], height: rs[49] - rs[48], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_17', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_17,part_code17', enabled: _isPartRowEnabled(17), onCleared: () => _clearPartRow(17), snapMode: _snapMode, showValidation: _showValidation, value: _partName17, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName17 = n; }, codeCtrl: _partCode17Controller)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_17', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_17,part_code17', required: true, snapMode: _snapMode, value: _partName17, onSelected: (v) => setState(() => _partName17 = v?['part_name_17,part_code17'] as String?)))),
           Positioned(left: cs[30], top: rs[48], width: cs[36] - cs[30], height: rs[49] - rs[48], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode17Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode17Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
           Positioned(left: cs[36], top: rs[48], width: cs[45] - cs[36], height: rs[49] - rs[48], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(17) ?? "").isNotEmpty) ? TextField(controller: _partQty17Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty17Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[49], width: cs[1] - cs[0], height: rs[50] - rs[49], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[49], width: cs[3] - cs[1], height: rs[50] - rs[49], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: _readOnlyTextField(_partNo18Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partNo1Controller, readOnly: true, style: const TextStyle(fontFamily: 'Arial', fontSize: 14.6), decoration: _inputDecoration))),
           Positioned(left: cs[3], top: rs[49], width: cs[30] - cs[3], height: rs[50] - rs[49], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_18', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_18,part_code18', enabled: _isPartRowEnabled(18), onCleared: () => _clearPartRow(18), snapMode: _snapMode, showValidation: _showValidation, value: _partName18, onSelected: (v) => _onPartPicked(v, setName: (n) { _partName18 = n; }, codeCtrl: _partCode18Controller)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'part_name_18', source: 'parts', displayFields: 'parts_name,parts_code', fields: 'part_name_18,part_code18', required: true, snapMode: _snapMode, value: _partName18, onSelected: (v) => setState(() => _partName18 = v?['part_name_18,part_code18'] as String?)))),
           Positioned(left: cs[30], top: rs[49], width: cs[36] - cs[30], height: rs[50] - rs[49], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _readOnlyTextField(_partCode18Controller, fontSize: 14.6))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _partCode18Controller, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
           Positioned(left: cs[36], top: rs[49], width: cs[45] - cs[36], height: rs[50] - rs[49], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: ((_partNameFor(18) ?? "").isNotEmpty) ? TextField(controller: _partQty18Controller, keyboardType: TextInputType.number, textAlign: _snapMode ? TextAlign.center : TextAlign.start, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration) : const SizedBox.shrink())),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: TextField(controller: _partQty18Controller, keyboardType: TextInputType.number, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2222,7 +1853,7 @@ class ReportScreen2State extends State<ReportScreen2> {
                 borderColor: Colors.black,
                 borderWidth: 0.0,
                 matrixData: matrixData,
-                numRows: 51,
+                numRows: 54,
                 numCols: 46,
               ),
             )),
@@ -2234,7 +1865,7 @@ class ReportScreen2State extends State<ReportScreen2> {
 ),
 ));
 
-  Widget _page2() => RepaintBoundary(key: _captureKey2, child: UnconstrainedBox(
+  Widget _page2() => UnconstrainedBox(
   alignment: Alignment.topLeft,
   child: LayoutBuilder(
   builder: (context, constraints) {
@@ -2292,7 +1923,7 @@ class ReportScreen2State extends State<ReportScreen2> {
       21.0,
     ];
 
-    final rowHeights = <double>[24.0, 20.0, 20.0, 20.0, 20.0, 29.0, 24.0, 24.0, 24.0, 24.0, 24.0, 20.0, 20.0, 24.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 20.0];
+    final rowHeights = <double>[24.0, 20.0, 20.0, 20.0, 20.0, 29.0, 24.0, 24.0, 24.0, 24.0, 24.0, 20.0, 20.0, 24.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 27.0, 24.0, 20.0];
 
     final cs = <double>[0.0];
     for (final w in colWidths) { cs.add(cs.last + w); }
@@ -2550,7 +2181,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               )),
           Positioned(left: cs[37], top: rs[5], width: cs[44] - cs[37], height: rs[6] - rs[5], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: Text(_reportNo ?? '', style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6, color: Color(0xFF000000)), softWrap: false, overflow: TextOverflow.visible))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: const SizedBox.shrink())),
 
 
 
@@ -2699,7 +2330,7 @@ class ReportScreen2State extends State<ReportScreen2> {
           Positioned(left: cs[1] - 1.0, top: rs[7] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
           Positioned(left: cs[6], top: rs[7], width: cs[17] - cs[6], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'visit_date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _visitDate, onChanged: (v) => setState(() => _visitDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'visit_date', required: true, readonly: true, snapMode: _snapMode, value: _visitDate, onChanged: (v) => setState(() => _visitDate = v)))),
           Positioned(left: cs[17], top: rs[7], width: cs[18] - cs[17], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
@@ -2723,7 +2354,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[27], top: rs[7], width: cs[36] - cs[27], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormTime(name: 'time_in', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _timeIn, onChanged: (v) => setState(() => _timeIn = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormTime(name: 'time_in', required: true, readonly: true, snapMode: _snapMode, value: _timeIn, onChanged: (v) => setState(() => _timeIn = v)))),
           Positioned(left: cs[36], top: rs[7], width: cs[37] - cs[36], height: rs[8] - rs[7], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
@@ -2763,7 +2394,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[6], top: rs[8], width: cs[17] - cs[6], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'finish_date', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _finishDate, onChanged: (v) => setState(() => _finishDate = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormDate(name: 'finish_date', required: true, readonly: true, snapMode: _snapMode, value: _finishDate, onChanged: (v) => setState(() => _finishDate = v)))),
           Positioned(left: cs[17], top: rs[8], width: cs[18] - cs[17], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
@@ -2787,7 +2418,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[27], top: rs[8], width: cs[36] - cs[27], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormTime(name: 'time_out', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _timeOut, onChanged: (v) => setState(() => _timeOut = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormTime(name: 'time_out', required: true, readonly: true, snapMode: _snapMode, value: _timeOut, onChanged: (v) => setState(() => _timeOut = v)))),
           Positioned(left: cs[36], top: rs[8], width: cs[37] - cs[36], height: rs[9] - rs[8], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: const SizedBox.shrink())),
@@ -2827,16 +2458,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[8], top: rs[9], width: cs[29] - cs[8], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _customerName, onSelected: (v) {
-                if (v == null) return;
-                setState(() {
-                  _customerName = v['name'] as String?;
-                  final contact = v['contact_name'];
-                  _customerContactController.text = contact is String ? contact : '';
-                  final email = v['email'];
-                  _customerEmail = email is String ? email : null;
-                });
-              }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'customer_name', source: 'customers', displayFields: 'customer_id,name,tel', fields: 'customer_name,customer_tel', required: true, readonly: true, snapMode: _snapMode, value: _customerName, onSelected: (v) => setState(() => _customerName = v?['customer_name,customer_tel'] as String?)))),
           Positioned(left: cs[29], top: rs[9], width: cs[33] - cs[29], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -2845,7 +2467,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[33], top: rs[9], width: cs[45] - cs[33], height: rs[10] - rs[9], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_customerContactController))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _customerTelController, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
           Positioned(left: cs[0], top: rs[10], width: cs[1] - cs[0], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1))),
@@ -2858,13 +2480,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[7], top: rs[10], width: cs[20] - cs[7], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'model_name', source: 'machine_models', required: true, snapMode: _snapMode, showValidation: _showValidation, value: _modelName, onSelected: (v) {
-                if (v == null) return;
-                setState(() {
-                  _modelName = v['model_name'] as String?;
-                  _machineModel = v;
-                });
-              }))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSearch(name: 'model_name', source: 'machine_models', displayFields: 'model_code,model_name', fields: 'model_name', required: true, readonly: true, snapMode: _snapMode, value: _modelName, onSelected: (v) => setState(() => _modelName = v?['model_name'] as String?)))),
           Positioned(left: cs[20], top: rs[10], width: cs[25] - cs[20], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: DefaultTextStyle.merge(
@@ -2873,7 +2489,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               ))),
           Positioned(left: cs[25], top: rs[10], width: cs[45] - cs[25], height: rs[11] - rs[10], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_serialNoController))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _serialNoController, readOnly: true, style: const TextStyle(fontFamily: 'Calibri', fontSize: 14.6), decoration: _inputDecoration))),
 
 
 
@@ -3136,7 +2752,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[15], width: cs[13] - cs[1], height: rs[23] - rs[15], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(snapMode: _snapMode, name: 'pic1', value: _imageUploadFiles['pic1'], onPicked: (x) => _onImagePicked('pic1', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic1'))),
           Positioned(left: cs[1] - 1.0, top: rs[15] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
 
 
@@ -3146,7 +2762,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: const SizedBox.shrink())),
           Positioned(left: cs[17], top: rs[15], width: cs[29] - cs[17], height: rs[23] - rs[15], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(snapMode: _snapMode, name: 'pic2', value: _imageUploadFiles['pic2'], onPicked: (x) => _onImagePicked('pic2', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic2'))),
           Positioned(left: cs[17] - 1.0, top: rs[15] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
 
 
@@ -3156,7 +2772,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[33], top: rs[15], width: cs[45] - cs[33], height: rs[23] - rs[15], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(snapMode: _snapMode, name: 'pic3', value: _imageUploadFiles['pic3'], onPicked: (x) => _onImagePicked('pic3', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic3'))),
           Positioned(left: cs[33] - 1.0, top: rs[15] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
 
           Positioned(left: cs[0], top: rs[16], width: cs[1] - cs[0], height: rs[17] - rs[16], child: Container(
@@ -3394,7 +3010,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[1], top: rs[24], width: cs[13] - cs[1], height: rs[32] - rs[24], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(snapMode: _snapMode, name: 'pic4', value: _imageUploadFiles['pic4'], onPicked: (x) => _onImagePicked('pic4', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic4'))),
           Positioned(left: cs[1] - 1.0, top: rs[24] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
 
 
@@ -3404,7 +3020,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.center, child: const SizedBox.shrink())),
           Positioned(left: cs[17], top: rs[24], width: cs[29] - cs[17], height: rs[32] - rs[24], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(snapMode: _snapMode, name: 'pic5', value: _imageUploadFiles['pic5'], onPicked: (x) => _onImagePicked('pic5', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic5'))),
           Positioned(left: cs[17] - 1.0, top: rs[24] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
 
 
@@ -3414,7 +3030,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[33], top: rs[24], width: cs[45] - cs[33], height: rs[32] - rs[24], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 1), bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(snapMode: _snapMode, name: 'pic6', value: _imageUploadFiles['pic6'], onPicked: (x) => _onImagePicked('pic6', x)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormImageUpload(name: 'pic6'))),
           Positioned(left: cs[33] - 1.0, top: rs[24] - 1.0, width: 1.0, height: 1.0, child: Container(color: Color(0xFF000000))),
 
           Positioned(left: cs[0], top: rs[25], width: cs[1] - cs[0], height: rs[26] - rs[25], child: Container(
@@ -3710,7 +3326,7 @@ class ReportScreen2State extends State<ReportScreen2> {
 
           Positioned(left: cs[6], top: rs[36], width: cs[19] - cs[6], height: rs[37] - rs[36], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_customerSignNameController, fontSize: 16))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _customerSignNameController, style: const TextStyle(fontFamily: 'Calibri', fontSize: 16), decoration: _inputDecoration))),
 
 
 
@@ -3721,7 +3337,7 @@ class ReportScreen2State extends State<ReportScreen2> {
 
           Positioned(left: cs[27], top: rs[36], width: cs[40] - cs[27], height: rs[37] - rs[36], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(bottom: BorderSide(color: Color(0xFF000000), width: 1))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: _requiredTextField(_staffSignNameController, fontSize: 16))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: TextField(controller: _staffSignNameController, style: const TextStyle(fontFamily: 'Calibri', fontSize: 16), decoration: _inputDecoration))),
 
 
 
@@ -3836,7 +3452,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.bottomLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[6], top: rs[38], width: cs[19] - cs[6], height: rs[42] - rs[38], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(snapMode: _snapMode, name: 'customer_sign', label: 'Customer Signature', initialData: _customerSignBytes, onSigned: (v) => setState(() => _customerSignBytes = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'customer_sign', label: 'Customer Signature', onSigned: (v) => setState(() => _customerSignBytes = v)))),
           Positioned(left: cs[6] - 2.0, top: rs[38] - 2.0, width: 2.0, height: 2.0, child: Container(color: Color(0xFF000000))),
 
 
@@ -3850,7 +3466,7 @@ class ReportScreen2State extends State<ReportScreen2> {
               padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: const SizedBox.shrink())),
           Positioned(left: cs[27], top: rs[38], width: cs[40] - cs[27], height: rs[42] - rs[38], child: Container(
               decoration: BoxDecoration(color: Colors.transparent, border: Border(right: BorderSide(color: Color(0xFF000000), width: 2), bottom: BorderSide(color: Color(0xFF000000), width: 2))),
-              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(snapMode: _snapMode, name: 'staff_sign', label: 'Service Staff Signature', initialData: _staffSignBytes, onSigned: (v) => setState(() => _staffSignBytes = v)))),
+              padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 4.0), alignment: Alignment.centerLeft, child: FormSignature(name: 'staff_sign', label: 'Service Staff Signature', onSigned: (v) => setState(() => _staffSignBytes = v)))),
           Positioned(left: cs[27] - 2.0, top: rs[38] - 2.0, width: 2.0, height: 2.0, child: Container(color: Color(0xFF000000))),
 
 
@@ -4360,7 +3976,7 @@ class ReportScreen2State extends State<ReportScreen2> {
     );
   },
 ),
-));
+);
 }
 
 // ============ HELPER CLASSES ============

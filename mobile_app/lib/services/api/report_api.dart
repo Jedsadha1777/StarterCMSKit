@@ -131,4 +131,29 @@ class ReportApi {
       (json) => json,
     );
   }
+
+  /// Download the report's PDF as bytes for printing/sharing.
+  /// Backend serves it via GET /reports/<id>/pdf when status >= sent.
+  Future<Uint8List> getReportPdf(String reportPublicId) async {
+    Future<http.Response> attempt() async {
+      final token = await _tokenManager.getAccessToken();
+      final uri = Uri.parse('${ApiConfig.baseUrl}/reports/$reportPublicId/pdf');
+      return http.get(
+        uri,
+        headers: token != null ? {'Authorization': 'Bearer $token'} : null,
+      ).timeout(const Duration(seconds: 30));
+    }
+
+    await _tokenManager.getOrRefreshToken(_api.refreshToken);
+    var response = await attempt();
+    if (response.statusCode == 401) {
+      await _api.refreshToken();
+      response = await attempt();
+    }
+    if (response.statusCode == 200) {
+      return response.bodyBytes;
+    }
+    final msg = _api.safeJsonDecode(response.body)['message'] ?? 'PDF not available';
+    throw Exception(msg);
+  }
 }

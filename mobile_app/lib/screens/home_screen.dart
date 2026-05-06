@@ -57,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            const Text('Home'),
+            const Text('Service Report Tool'),
             const SizedBox(width: 8),
             Icon(
               isOnline ? Icons.wifi : Icons.wifi_off,
